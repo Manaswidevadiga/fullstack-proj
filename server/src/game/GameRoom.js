@@ -1,3 +1,4 @@
+const pool = require('../config/db');
 const { GRID_SIZE, TICK_RATE_MS, SHRINK_INTERVAL_MS } = require('./constants');
 
 class GameRoom {
@@ -125,11 +126,12 @@ class GameRoom {
     this.io.to(this.roomCode).emit('gameState', this.getState());
 
     const aliveCount = Object.values(this.players).filter((p) => p.alive).length;
-    if (aliveCount <= 1 && Object.keys(this.players).length > 1) {
-      const winnerEntry = Object.values(this.players).find((p) => p.alive);
-      this.io.to(this.roomCode).emit('gameOver', { winner: winnerEntry ? winnerEntry.username : null });
-      this.stop();
-    }
+if (aliveCount <= 1 && Object.keys(this.players).length > 1) {
+  const winnerEntry = Object.values(this.players).find((p) => p.alive);
+  this.io.to(this.roomCode).emit('gameOver', { winner: winnerEntry ? winnerEntry.username : null });
+  this.saveMatchResult(winnerEntry);
+  this.stop();
+}
   }
 
   getState() {
@@ -141,6 +143,31 @@ class GameRoom {
       dangerRing: this.dangerRing
     };
   }
+async saveMatchResult(winnerEntry) {
+  const playerSnapshot = Object.values(this.players).map((p) => ({
+    username: p.username,
+    length: p.snake.length,
+    alive: p.alive
+  }));
+
+  try {
+    const matchResult = await pool.query(
+      'INSERT INTO matches (room_code, ended_at) VALUES ($1, NOW()) RETURNING id',
+      [this.roomCode]
+    );
+    const matchId = matchResult.rows[0].id;
+
+    for (const player of playerSnapshot) {
+      await pool.query(
+        'INSERT INTO match_players (match_id, guest_name, final_length, placement) VALUES ($1, $2, $3, $4)',
+        [matchId, player.username, player.length, player.alive ? 1 : null]
+      );
+    }
+    console.log(`Match ${matchId} saved (${playerSnapshot.length} players).`);
+  } catch (err) {
+    console.error('Failed to save match:', err);
+  }
+}
 }
 
 module.exports = GameRoom;
