@@ -22,19 +22,22 @@ module.exports = function (io) {
     });
 
     socket.on('joinRoom', ({ roomCode, username }, callback) => {
-      const room = rooms[roomCode];
-      if (!room) return callback({ error: 'Room not found' });
-      room.addPlayer(socket.id, username);
-      socket.join(roomCode);
-      socket.data.roomCode = roomCode;
-      callback({ success: true });
-      io.to(roomCode).emit('lobbyUpdate', room.getState());
-    });
+  console.log(`joinRoom attempt: roomCode="${roomCode}", username="${username}"`);
+  const room = rooms[roomCode];
+  if (!room) return callback({ error: 'Room not found' });
+  room.addPlayer(socket.id, username);
+  console.log('Players in room after join:', Object.keys(room.players));
+  socket.join(roomCode);
+  socket.data.roomCode = roomCode;
+  callback({ success: true });
+  io.to(roomCode).emit('lobbyUpdate', room.getState());
+});
 
-    socket.on('startGame', () => {
-      const room = rooms[socket.data.roomCode];
-      if (room && !room.started) room.start();
-    });
+socket.on('startGame', () => {
+  const room = rooms[socket.data.roomCode];
+  console.log(`startGame called. Room: ${socket.data.roomCode}, players:`, room ? Object.keys(room.players) : 'ROOM NOT FOUND');
+  if (room && !room.started) room.start();
+});
 
     socket.on('changeDirection', (dirName) => {
       const room = rooms[socket.data.roomCode];

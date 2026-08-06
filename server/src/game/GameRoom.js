@@ -13,33 +13,33 @@ class GameRoom {
     this.started = false;
   }
 
-  addPlayer(socketId, username) {
-    const spawn = this.getSpawnPoint(Object.keys(this.players).length);
-    this.players[socketId] = {
-      username,
-      snake: [spawn],
-      direction: { x: 1, y: 0 },
-      pendingDirection: { x: 1, y: 0 },
-      alive: true
-    };
-    this.food = this.randomFreeCell();
-  }
+ addPlayer(socketId, username) {
+  const spawn = this.getSpawnPoint(Object.keys(this.players).length);
+  this.players[socketId] = {
+    username,
+    snake: [{ x: spawn.x, y: spawn.y }],
+    direction: spawn.direction,
+    pendingDirection: spawn.direction,
+    alive: true
+  };
+  this.food = this.randomFreeCell();
+}
 
   removePlayer(socketId) {
     delete this.players[socketId];
   }
 
   getSpawnPoint(index) {
-    const corners = [
-      { x: 2, y: 2 },
-      { x: GRID_SIZE - 3, y: 2 },
-      { x: 2, y: GRID_SIZE - 3 },
-      { x: GRID_SIZE - 3, y: GRID_SIZE - 3 },
-      { x: Math.floor(GRID_SIZE / 2), y: 2 },
-      { x: Math.floor(GRID_SIZE / 2), y: GRID_SIZE - 3 }
-    ];
-    return corners[index] || { x: 5, y: 5 };
-  }
+  const spawns = [
+    { x: 2, y: 2, direction: { x: 1, y: 0 } },                                    // top-left, move right
+    { x: GRID_SIZE - 3, y: 2, direction: { x: -1, y: 0 } },                       // top-right, move left
+    { x: 2, y: GRID_SIZE - 3, direction: { x: 1, y: 0 } },                        // bottom-left, move right
+    { x: GRID_SIZE - 3, y: GRID_SIZE - 3, direction: { x: -1, y: 0 } },           // bottom-right, move left
+    { x: Math.floor(GRID_SIZE / 2), y: 2, direction: { x: 0, y: 1 } },            // top-mid, move down
+    { x: Math.floor(GRID_SIZE / 2), y: GRID_SIZE - 3, direction: { x: 0, y: -1 } } // bottom-mid, move up
+  ];
+  return spawns[index] || { x: 5, y: 5, direction: { x: 1, y: 0 } };
+}
 
   randomFreeCell() {
     let cell;
