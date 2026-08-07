@@ -118,9 +118,7 @@ export default function Game() {
     // Danger ring - shrinking safe zone
     if (typeof gameState.dangerRing === 'number' && gameState.dangerRing > 0) {
       const center = CANVAS_SIZE / 2
-      const maxRadius = CANVAS_SIZE / 2
-      const dangerPx = gameState.dangerRing * CELL_SIZE
-      const safeRadius = maxRadius - dangerPx
+      const safeRadius = (gameState.dangerRing / GRID_SIZE) * CANVAS_SIZE
 
       ctx.save()
       ctx.beginPath()
