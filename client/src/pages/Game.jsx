@@ -116,20 +116,22 @@ export default function Game() {
     }
 
     // Danger ring - shrinking safe zone
-    if (typeof gameState.dangerRing === 'number' && gameState.dangerRing > 0) {
+    if (typeof gameState.dangerRing === 'number') {
       const center = CANVAS_SIZE / 2
-      const safeRadius = (gameState.dangerRing / GRID_SIZE) * CANVAS_SIZE
+      const maxRadius = CANVAS_SIZE / 2
+      const dangerPx = (gameState.dangerRing / GRID_SIZE) * CANVAS_SIZE
+      const safeRadius = Math.max(maxRadius - dangerPx, 0)
 
       ctx.save()
       ctx.beginPath()
       ctx.rect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-      ctx.arc(center, center, Math.max(safeRadius, 0), 0, Math.PI * 2, true)
+      ctx.arc(center, center, safeRadius, 0, Math.PI * 2, true)
       ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'
       ctx.fill('evenodd')
       ctx.restore()
 
       ctx.beginPath()
-      ctx.arc(center, center, Math.max(safeRadius, 0), 0, Math.PI * 2)
+      ctx.arc(center, center, safeRadius, 0, Math.PI * 2)
       ctx.strokeStyle = '#ef4444'
       ctx.lineWidth = 2
       ctx.shadowColor = '#ef4444'
