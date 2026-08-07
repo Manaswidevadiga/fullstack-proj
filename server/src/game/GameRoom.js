@@ -11,6 +11,7 @@ class GameRoom {
     this.tickInterval = null;
     this.shrinkInterval = null;
     this.started = false;
+      this.rematchReady = new Set();
   }
 
  addPlayer(socketId, username) {
@@ -26,8 +27,9 @@ class GameRoom {
 }
 
   removePlayer(socketId) {
-    delete this.players[socketId];
-  }
+  delete this.players[socketId];
+  this.rematchReady.delete(socketId);
+}
 
   getSpawnPoint(index) {
   const spawns = [
@@ -71,6 +73,21 @@ class GameRoom {
     clearInterval(this.tickInterval);
     clearInterval(this.shrinkInterval);
   }
+  resetForRematch() {
+  const ids = Object.keys(this.players);
+  ids.forEach((id, index) => {
+    const spawn = this.getSpawnPoint(index);
+    const p = this.players[id];
+    p.snake = [{ x: spawn.x, y: spawn.y }];
+    p.direction = spawn.direction;
+    p.pendingDirection = spawn.direction;
+    p.alive = true;
+  });
+  this.dangerRing = 0;
+  this.food = this.randomFreeCell();
+  this.started = false;
+  this.rematchReady.clear();
+}
 
   shrinkArena() {
     this.dangerRing += 1;
