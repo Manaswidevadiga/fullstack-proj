@@ -48,7 +48,7 @@ export default function Game() {
   const [gameState, setGameState] = useState(null)
   const [winner, setWinner] = useState(undefined)
   const [rematchStatus, setRematchStatus] = useState(null)
-const [iAmReady, setIAmReady] = useState(false)
+  const [iAmReady, setIAmReady] = useState(false)
 
   useEffect(() => {
     const useMock = new URLSearchParams(window.location.search).get('mock') === 'true'
@@ -62,21 +62,21 @@ const [iAmReady, setIAmReady] = useState(false)
       return () => clearInterval(interval)
     }
 
-  socket.on('gameState', (state) => setGameState(state))
-socket.on('gameOver', (data) => setWinner(data.winner))
-socket.on('rematchStatus', (status) => setRematchStatus(status))
-socket.on('rematchReady', (state) => {
-  setGameState(state)
-  setWinner(undefined)
-  setRematchStatus(null)
-  setIAmReady(false)
-})
-return () => {
-  socket.off('gameState')
-  socket.off('gameOver')
-  socket.off('rematchStatus')
-  socket.off('rematchReady')
-}
+    socket.on('gameState', (state) => setGameState(state))
+    socket.on('gameOver', (data) => setWinner(data.winner))
+    socket.on('rematchStatus', (status) => setRematchStatus(status))
+    socket.on('rematchReady', (state) => {
+      setGameState(state)
+      setWinner(undefined)
+      setRematchStatus(null)
+      setIAmReady(false)
+    })
+    return () => {
+      socket.off('gameState')
+      socket.off('gameOver')
+      socket.off('rematchStatus')
+      socket.off('rematchReady')
+    }
   }, [])
 
   useEffect(() => {
@@ -94,6 +94,7 @@ return () => {
   useEffect(() => {
     if (!gameState) return
     const canvas = canvasRef.current
+    if (!canvas) return
     const ctx = canvas.getContext('2d')
 
     // Background
@@ -114,7 +115,6 @@ return () => {
       ctx.stroke()
     }
 
-    // Danger ring - shrinking safe zone
     // Danger ring - shrinking safe zone
     if (typeof gameState.dangerRing === 'number' && gameState.dangerRing > 0) {
       const center = CANVAS_SIZE / 2
@@ -175,59 +175,59 @@ return () => {
     })
   }, [gameState])
 
-if (winner !== undefined) {
-  return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
-      <motion.h1
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="text-4xl font-bold text-green-400"
-      >
-        {winner ? `${winner} wins!` : 'Game Over — No Winner'}
-      </motion.h1>
+  if (winner !== undefined) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
+        <motion.h1
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className="text-4xl font-bold text-green-400"
+        >
+          {winner ? `${winner} wins!` : 'Game Over — No Winner'}
+        </motion.h1>
 
-      <div className="flex flex-col items-center gap-3">
-        <div className="flex gap-3">
-          <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            whileHover={{ scale: iAmReady ? 1 : 1.05 }}
-            whileTap={{ scale: iAmReady ? 1 : 0.95 }}
-            disabled={iAmReady}
-            onClick={() => { socket.emit('playAgain'); setIAmReady(true) }}
-            className={`font-semibold rounded-lg px-6 py-2 transition ${
-              iAmReady
-                ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
-                : 'bg-green-500 hover:bg-green-400 text-black'
-            }`}
-          >
-            {iAmReady ? 'Waiting...' : 'Play Again'}
-          </motion.button>
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex gap-3">
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              whileHover={{ scale: iAmReady ? 1 : 1.05 }}
+              whileTap={{ scale: iAmReady ? 1 : 0.95 }}
+              disabled={iAmReady}
+              onClick={() => { socket.emit('playAgain'); setIAmReady(true) }}
+              className={`font-semibold rounded-lg px-6 py-2 transition ${
+                iAmReady
+                  ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
+                  : 'bg-green-500 hover:bg-green-400 text-black'
+              }`}
+            >
+              {iAmReady ? 'Waiting...' : 'Play Again'}
+            </motion.button>
 
-          <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => navigate('/lobby')}
-            className="bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-lg px-6 py-2 transition"
-          >
-            Back to Lobby
-          </motion.button>
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => navigate('/lobby')}
+              className="bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-lg px-6 py-2 transition"
+            >
+              Back to Lobby
+            </motion.button>
+          </div>
+
+          {rematchStatus && (
+            <p className="text-zinc-400 text-sm">
+              Waiting for other players... ({rematchStatus.ready}/{rematchStatus.total} ready)
+            </p>
+          )}
         </div>
-
-        {rematchStatus && (
-          <p className="text-zinc-400 text-sm">
-            Waiting for other players... ({rematchStatus.ready}/{rematchStatus.total} ready)
-          </p>
-        )}
       </div>
-    </div>
-  )
-}
+    )
+  }
 
   const players = Object.entries(gameState?.players || {})
 
@@ -240,43 +240,43 @@ if (winner !== undefined) {
         className="border border-zinc-800 rounded-lg"
       />
       {/* Mobile touch controls */}
-<div className="lg:hidden grid grid-cols-3 gap-2 w-40 mx-auto mt-4">
-  <div />
-  <button
-    onTouchStart={() => socket.emit('changeDirection', 'UP')}
-    onClick={() => socket.emit('changeDirection', 'UP')}
-    className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
-  >
-    ↑
-  </button>
-  <div />
+      <div className="lg:hidden grid grid-cols-3 gap-2 w-40 mx-auto mt-4">
+        <div />
+        <button
+          onTouchStart={() => socket.emit('changeDirection', 'UP')}
+          onClick={() => socket.emit('changeDirection', 'UP')}
+          className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
+        >
+          ↑
+        </button>
+        <div />
 
-  <button
-    onTouchStart={() => socket.emit('changeDirection', 'LEFT')}
-    onClick={() => socket.emit('changeDirection', 'LEFT')}
-    className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
-  >
-    ←
-  </button>
-  <div />
-  <button
-    onTouchStart={() => socket.emit('changeDirection', 'RIGHT')}
-    onClick={() => socket.emit('changeDirection', 'RIGHT')}
-    className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
-  >
-    →
-  </button>
+        <button
+          onTouchStart={() => socket.emit('changeDirection', 'LEFT')}
+          onClick={() => socket.emit('changeDirection', 'LEFT')}
+          className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
+        >
+          ←
+        </button>
+        <div />
+        <button
+          onTouchStart={() => socket.emit('changeDirection', 'RIGHT')}
+          onClick={() => socket.emit('changeDirection', 'RIGHT')}
+          className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
+        >
+          →
+        </button>
 
-  <div />
-  <button
-    onTouchStart={() => socket.emit('changeDirection', 'DOWN')}
-    onClick={() => socket.emit('changeDirection', 'DOWN')}
-    className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
-  >
-    ↓
-  </button>
-  <div />
-</div>
+        <div />
+        <button
+          onTouchStart={() => socket.emit('changeDirection', 'DOWN')}
+          onClick={() => socket.emit('changeDirection', 'DOWN')}
+          className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
+        >
+          ↓
+        </button>
+        <div />
+      </div>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 w-full lg:w-56">
         <h2 className="text-zinc-400 text-sm font-semibold mb-3 uppercase tracking-wide">
@@ -301,4 +301,4 @@ if (winner !== undefined) {
       </div>
     </div>
   )
-} 
+}
