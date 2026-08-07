@@ -11,6 +11,7 @@ class GameRoom {
     this.tickInterval = null;
     this.shrinkInterval = null;
     this.started = false;
+      this.rematchReady = new Set();
   }
 
  addPlayer(socketId, username) {
@@ -26,8 +27,9 @@ class GameRoom {
 }
 
   removePlayer(socketId) {
-    delete this.players[socketId];
-  }
+  delete this.players[socketId];
+  this.rematchReady.delete(socketId);
+}
 
   getSpawnPoint(index) {
   const spawns = [
@@ -84,6 +86,7 @@ class GameRoom {
   this.dangerRing = 0;
   this.food = this.randomFreeCell();
   this.started = false;
+  this.rematchReady.clear();
 }
 
   shrinkArena() {
