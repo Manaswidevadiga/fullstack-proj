@@ -71,6 +71,20 @@ class GameRoom {
     clearInterval(this.tickInterval);
     clearInterval(this.shrinkInterval);
   }
+  resetForRematch() {
+  const ids = Object.keys(this.players);
+  ids.forEach((id, index) => {
+    const spawn = this.getSpawnPoint(index);
+    const p = this.players[id];
+    p.snake = [{ x: spawn.x, y: spawn.y }];
+    p.direction = spawn.direction;
+    p.pendingDirection = spawn.direction;
+    p.alive = true;
+  });
+  this.dangerRing = 0;
+  this.food = this.randomFreeCell();
+  this.started = false;
+}
 
   shrinkArena() {
     this.dangerRing += 1;

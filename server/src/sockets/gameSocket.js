@@ -38,6 +38,13 @@ socket.on('startGame', () => {
   console.log(`startGame called. Room: ${socket.data.roomCode}, players:`, room ? Object.keys(room.players) : 'ROOM NOT FOUND');
   if (room && !room.started) room.start();
 });
+socket.on('playAgain', () => {
+  const room = rooms[socket.data.roomCode];
+  if (!room) return;
+  room.resetForRematch();
+  io.to(socket.data.roomCode).emit('rematchReady', room.getState());
+  room.start();
+});
 
     socket.on('changeDirection', (dirName) => {
       const room = rooms[socket.data.roomCode];
