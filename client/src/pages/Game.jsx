@@ -115,28 +115,26 @@ export default function Game() {
       ctx.stroke()
     }
 
-    // Danger ring - shrinking safe zone
+    // Danger zone - shrinking safe area (square inset from edges)
     if (typeof gameState.dangerRing === 'number') {
-      const center = CANVAS_SIZE / 2
-      const maxRadius = CANVAS_SIZE / 2
-      const dangerPx = (gameState.dangerRing / GRID_SIZE) * CANVAS_SIZE
-      const safeRadius = Math.max(maxRadius - dangerPx, 0)
+      const inset = gameState.dangerRing * CELL_SIZE
+      const safeX = inset
+      const safeY = inset
+      const safeSize = Math.max(CANVAS_SIZE - inset * 2, 0)
 
       ctx.save()
       ctx.beginPath()
       ctx.rect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-      ctx.arc(center, center, safeRadius, 0, Math.PI * 2, true)
+      ctx.rect(safeX, safeY, safeSize, safeSize)
       ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'
       ctx.fill('evenodd')
       ctx.restore()
 
-      ctx.beginPath()
-      ctx.arc(center, center, safeRadius, 0, Math.PI * 2)
       ctx.strokeStyle = '#ef4444'
       ctx.lineWidth = 2
       ctx.shadowColor = '#ef4444'
       ctx.shadowBlur = 8
-      ctx.stroke()
+      ctx.strokeRect(safeX, safeY, safeSize, safeSize)
       ctx.shadowBlur = 0
     }
 
