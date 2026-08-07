@@ -1,6 +1,6 @@
 module.exports = {
   GRID_SIZE: 40,
-  TICK_RATE_MS: 125,
+  TICK_RATE_MS: 190,
   SHRINK_INTERVAL_MS: 20000,
   DIRECTIONS: {
     UP: { x: 0, y: -1 },
