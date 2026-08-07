@@ -200,6 +200,44 @@ export default function Game() {
         height={CANVAS_SIZE}
         className="border border-zinc-800 rounded-lg"
       />
+      {/* Mobile touch controls */}
+<div className="lg:hidden grid grid-cols-3 gap-2 w-40 mx-auto mt-4">
+  <div />
+  <button
+    onTouchStart={() => socket.emit('changeDirection', 'UP')}
+    onClick={() => socket.emit('changeDirection', 'UP')}
+    className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
+  >
+    ↑
+  </button>
+  <div />
+
+  <button
+    onTouchStart={() => socket.emit('changeDirection', 'LEFT')}
+    onClick={() => socket.emit('changeDirection', 'LEFT')}
+    className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
+  >
+    ←
+  </button>
+  <div />
+  <button
+    onTouchStart={() => socket.emit('changeDirection', 'RIGHT')}
+    onClick={() => socket.emit('changeDirection', 'RIGHT')}
+    className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
+  >
+    →
+  </button>
+
+  <div />
+  <button
+    onTouchStart={() => socket.emit('changeDirection', 'DOWN')}
+    onClick={() => socket.emit('changeDirection', 'DOWN')}
+    className="bg-zinc-800 active:bg-green-500 text-white rounded-lg py-3 text-xl"
+  >
+    ↓
+  </button>
+  <div />
+</div>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 w-full lg:w-56">
         <h2 className="text-zinc-400 text-sm font-semibold mb-3 uppercase tracking-wide">
