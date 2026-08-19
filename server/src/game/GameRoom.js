@@ -11,43 +11,57 @@ class GameRoom {
     this.tickInterval = null;
     this.shrinkInterval = null;
     this.started = false;
-      this.rematchReady = new Set();
+    this.rematchReady = new Set();
+    this.hostId = null;
   }
 
- addPlayer(socketId, username) {
-  const spawn = this.getSpawnPoint(Object.keys(this.players).length);
-  this.players[socketId] = {
-    username,
-    snake: [{ x: spawn.x, y: spawn.y }],
-    direction: spawn.direction,
-    pendingDirection: spawn.direction,
-    alive: true
-  };
-  this.food = this.randomFreeCell();
-}
+  addPlayer(socketId, username) {
+    if (Object.keys(this.players).length === 0) {
+      this.hostId = socketId; // first player in an empty room becomes host
+    }
+    const spawn = this.getSpawnPoint(Object.keys(this.players).length);
+    this.players[socketId] = {
+      username,
+      snake: [{ x: spawn.x, y: spawn.y }],
+      direction: spawn.direction,
+      pendingDirection: spawn.direction,
+      alive: true
+    };
+    this.food = this.randomFreeCell();
+  }
 
   removePlayer(socketId) {
-  delete this.players[socketId];
-  this.rematchReady.delete(socketId);
-}
+    delete this.players[socketId];
+    this.rematchReady.delete(socketId);
+    if (this.hostId === socketId) {
+      const remaining = Object.keys(this.players);
+      this.hostId = remaining.length > 0 ? remaining[0] : null; // migrate host if they leave
+    }
+  }
+
+  isHost(socketId) {
+    return this.hostId === socketId;
+  }
 
   getSpawnPoint(index) {
-  const spawns = [
-    { x: 2, y: 2, direction: { x: 1, y: 0 } },                                    // top-left, move right
-    { x: GRID_SIZE - 3, y: 2, direction: { x: -1, y: 0 } },                       // top-right, move left
-    { x: 2, y: GRID_SIZE - 3, direction: { x: 1, y: 0 } },                        // bottom-left, move right
-    { x: GRID_SIZE - 3, y: GRID_SIZE - 3, direction: { x: -1, y: 0 } },           // bottom-right, move left
-    { x: Math.floor(GRID_SIZE / 2), y: 2, direction: { x: 0, y: 1 } },            // top-mid, move down
-    { x: Math.floor(GRID_SIZE / 2), y: GRID_SIZE - 3, direction: { x: 0, y: -1 } } // bottom-mid, move up
-  ];
-  return spawns[index] || { x: 5, y: 5, direction: { x: 1, y: 0 } };
-}
+    const spawns = [
+      { x: 2, y: 2, direction: { x: 1, y: 0 } },                                    // top-left, move right
+      { x: GRID_SIZE - 3, y: 2, direction: { x: -1, y: 0 } },                       // top-right, move left
+      { x: 2, y: GRID_SIZE - 3, direction: { x: 1, y: 0 } },                        // bottom-left, move right
+      { x: GRID_SIZE - 3, y: GRID_SIZE - 3, direction: { x: -1, y: 0 } },           // bottom-right, move left
+      { x: Math.floor(GRID_SIZE / 2), y: 2, direction: { x: 0, y: 1 } },            // top-mid, move down
+      { x: Math.floor(GRID_SIZE / 2), y: GRID_SIZE - 3, direction: { x: 0, y: -1 } } // bottom-mid, move up
+    ];
+    return spawns[index] || { x: 5, y: 5, direction: { x: 1, y: 0 } };
+  }
 
   randomFreeCell() {
     let cell;
+    let attempts = 0;
     do {
       cell = { x: Math.floor(Math.random() * GRID_SIZE), y: Math.floor(Math.random() * GRID_SIZE) };
-    } while (this.isCellOccupied(cell));
+      attempts++;
+    } while ((this.isCellOccupied(cell) || this.isInDangerZone(cell)) && attempts < 1000);
     return cell;
   }
 
@@ -73,24 +87,28 @@ class GameRoom {
     clearInterval(this.tickInterval);
     clearInterval(this.shrinkInterval);
   }
+
   resetForRematch() {
-  const ids = Object.keys(this.players);
-  ids.forEach((id, index) => {
-    const spawn = this.getSpawnPoint(index);
-    const p = this.players[id];
-    p.snake = [{ x: spawn.x, y: spawn.y }];
-    p.direction = spawn.direction;
-    p.pendingDirection = spawn.direction;
-    p.alive = true;
-  });
-  this.dangerRing = 0;
-  this.food = this.randomFreeCell();
-  this.started = false;
-  this.rematchReady.clear();
-}
+    const ids = Object.keys(this.players);
+    ids.forEach((id, index) => {
+      const spawn = this.getSpawnPoint(index);
+      const p = this.players[id];
+      p.snake = [{ x: spawn.x, y: spawn.y }];
+      p.direction = spawn.direction;
+      p.pendingDirection = spawn.direction;
+      p.alive = true;
+    });
+    this.dangerRing = 0;
+    this.food = this.randomFreeCell();
+    this.started = false;
+    this.rematchReady.clear();
+  }
 
   shrinkArena() {
     this.dangerRing += 1;
+    if (this.isInDangerZone(this.food)) {
+      this.food = this.randomFreeCell();
+    }
     this.io.to(this.roomCode).emit('arenaShrink', { dangerRing: this.dangerRing });
   }
 
@@ -143,12 +161,12 @@ class GameRoom {
     this.io.to(this.roomCode).emit('gameState', this.getState());
 
     const aliveCount = Object.values(this.players).filter((p) => p.alive).length;
-if (aliveCount <= 1 && Object.keys(this.players).length > 1) {
-  const winnerEntry = Object.values(this.players).find((p) => p.alive);
-  this.io.to(this.roomCode).emit('gameOver', { winner: winnerEntry ? winnerEntry.username : null });
-  this.saveMatchResult(winnerEntry);
-  this.stop();
-}
+    if (aliveCount <= 1 && Object.keys(this.players).length > 1) {
+      const winnerEntry = Object.values(this.players).find((p) => p.alive);
+      this.io.to(this.roomCode).emit('gameOver', { winner: winnerEntry ? winnerEntry.username : null });
+      this.saveMatchResult(winnerEntry);
+      this.stop();
+    }
   }
 
   getState() {
@@ -157,34 +175,36 @@ if (aliveCount <= 1 && Object.keys(this.players).length > 1) {
         Object.entries(this.players).map(([id, p]) => [id, { username: p.username, snake: p.snake, alive: p.alive }])
       ),
       food: this.food,
-      dangerRing: this.dangerRing
+      dangerRing: this.dangerRing,
+      hostId: this.hostId
     };
   }
-async saveMatchResult(winnerEntry) {
-  const playerSnapshot = Object.values(this.players).map((p) => ({
-    username: p.username,
-    length: p.snake.length,
-    alive: p.alive
-  }));
 
-  try {
-    const matchResult = await pool.query(
-      'INSERT INTO matches (room_code, ended_at) VALUES ($1, NOW()) RETURNING id',
-      [this.roomCode]
-    );
-    const matchId = matchResult.rows[0].id;
+  async saveMatchResult(winnerEntry) {
+    const playerSnapshot = Object.values(this.players).map((p) => ({
+      username: p.username,
+      length: p.snake.length,
+      alive: p.alive
+    }));
 
-    for (const player of playerSnapshot) {
-      await pool.query(
-        'INSERT INTO match_players (match_id, guest_name, final_length, placement) VALUES ($1, $2, $3, $4)',
-        [matchId, player.username, player.length, player.alive ? 1 : null]
+    try {
+      const matchResult = await pool.query(
+        'INSERT INTO matches (room_code, ended_at) VALUES ($1, NOW()) RETURNING id',
+        [this.roomCode]
       );
+      const matchId = matchResult.rows[0].id;
+
+      for (const player of playerSnapshot) {
+        await pool.query(
+          'INSERT INTO match_players (match_id, guest_name, final_length, placement) VALUES ($1, $2, $3, $4)',
+          [matchId, player.username, player.length, player.alive ? 1 : null]
+        );
+      }
+      console.log(`Match ${matchId} saved (${playerSnapshot.length} players).`);
+    } catch (err) {
+      console.error('Failed to save match:', err);
     }
-    console.log(`Match ${matchId} saved (${playerSnapshot.length} players).`);
-  } catch (err) {
-    console.error('Failed to save match:', err);
   }
-}
 }
 
 module.exports = GameRoom;
