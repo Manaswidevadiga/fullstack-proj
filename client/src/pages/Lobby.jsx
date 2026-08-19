@@ -50,7 +50,7 @@ export default function Lobby() {
 
   const handleCreateRoom = () => {
     setError('')
-    socket.emit('createRoom', { username: user.username }, (res) => {
+    socket.emit('createRoom', { username: user.username, isGuest: !!user.isGuest }, (res) => {
       if (res?.roomCode) {
         setRoomCode(res.roomCode)
         setInRoom(true)
@@ -65,7 +65,7 @@ export default function Lobby() {
     if (!joinCodeInput.trim()) return
     socket.emit(
       'joinRoom',
-      { roomCode: joinCodeInput.trim().toUpperCase(), username: user.username },
+      { roomCode: joinCodeInput.trim().toUpperCase(), username: user.username, isGuest: !!user.isGuest },
       (res) => {
         if (res?.success) {
           setRoomCode(joinCodeInput.trim().toUpperCase())
@@ -80,7 +80,7 @@ export default function Lobby() {
   const handleQuickJoin = () => {
     setError('')
     setFindingMatch(true)
-    socket.emit('quickJoin', { username: user.username }, (res) => {
+    socket.emit('quickJoin', { username: user.username, isGuest: !!user.isGuest }, (res) => {
       setFindingMatch(false)
       if (res?.roomCode) {
         setRoomCode(res.roomCode)

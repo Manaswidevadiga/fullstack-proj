@@ -2,6 +2,10 @@ import { createContext, useContext, useState, useEffect } from 'react'
 
 const AuthContext = createContext(null)
 
+function generateGuestName() {
+  return `Guest${Math.floor(1000 + Math.random() * 9000)}`
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [token, setToken] = useState(null)
@@ -24,6 +28,13 @@ export function AuthProvider({ children }) {
     setToken(jwt)
   }
 
+  const continueAsGuest = () => {
+    const guestUser = { username: generateGuestName(), isGuest: true }
+    setUser(guestUser)
+    setToken(null)
+    return guestUser
+  }
+
   const logoutUser = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
@@ -32,7 +43,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, loginUser, logoutUser }}>
+    <AuthContext.Provider value={{ user, token, loading, loginUser, continueAsGuest, logoutUser }}>
       {children}
     </AuthContext.Provider>
   )
