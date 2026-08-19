@@ -15,6 +15,7 @@ export default function Lobby() {
   const [hostId, setHostId] = useState(null)
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(!socket.connected)
+  const [findingMatch, setFindingMatch] = useState(false)
 
   useEffect(() => {
     socket.connect()
@@ -76,6 +77,20 @@ export default function Lobby() {
     )
   }
 
+  const handleQuickJoin = () => {
+    setError('')
+    setFindingMatch(true)
+    socket.emit('quickJoin', { username: user.username }, (res) => {
+      setFindingMatch(false)
+      if (res?.roomCode) {
+        setRoomCode(res.roomCode)
+        setInRoom(true)
+      } else {
+        setError('Failed to find a match.')
+      }
+    })
+  }
+
   const handleStartGame = () => {
     socket.emit('startGame')
   }
@@ -107,17 +122,27 @@ export default function Lobby() {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
+              onClick={handleQuickJoin}
+              disabled={findingMatch}
+              className="w-full bg-yellow-400 hover:bg-yellow-300 text-black font-bold rounded-lg py-3 transition disabled:opacity-60"
+            >
+              {findingMatch ? 'Finding a match…' : '⚡ Quick Match'}
+            </motion.button>
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-zinc-700" />
+              <span className="text-zinc-500 text-sm">or play with friends</span>
+              <div className="flex-1 h-px bg-zinc-700" />
+            </div>
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               onClick={handleCreateRoom}
               className="w-full bg-green-500 hover:bg-green-400 text-black font-semibold rounded-lg py-2 transition"
             >
               Create Room
             </motion.button>
-
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-px bg-zinc-700" />
-              <span className="text-zinc-500 text-sm">or</span>
-              <div className="flex-1 h-px bg-zinc-700" />
-            </div>
 
             <div className="space-y-2">
               <input
