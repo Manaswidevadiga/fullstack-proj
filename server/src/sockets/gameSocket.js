@@ -17,17 +17,17 @@ module.exports = function (io) {
   io.on('connection', (socket) => {
     console.log('connected:', socket.id);
 
-    socket.on('createRoom', ({ username, isGuest }, callback) => {
+    socket.on('createRoom', ({ username, isGuest, skin }, callback) => {
       const roomCode = generateRoomCode();
       rooms[roomCode] = new GameRoom(roomCode, io);
-      rooms[roomCode].addPlayer(socket.id, username, !!isGuest);
+      rooms[roomCode].addPlayer(socket.id, username, !!isGuest, skin);
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
       callback({ roomCode });
       io.to(roomCode).emit('lobbyUpdate', rooms[roomCode].getState());
     });
 
-    socket.on('joinRoom', ({ roomCode, username, isGuest }, callback) => {
+    socket.on('joinRoom', ({ roomCode, username, isGuest, skin }, callback) => {
       console.log(`joinRoom attempt: roomCode="${roomCode}", username="${username}"`);
       const room = rooms[roomCode];
       if (!room) return callback({ error: 'Room not found' });
@@ -35,7 +35,7 @@ module.exports = function (io) {
       if (Object.keys(room.players).length >= MAX_PLAYERS_PER_ROOM) {
         return callback({ error: 'Room is full' });
       }
-      room.addPlayer(socket.id, username, !!isGuest);
+      room.addPlayer(socket.id, username, !!isGuest, skin);
       console.log('Players in room after join:', Object.keys(room.players));
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
@@ -43,7 +43,7 @@ module.exports = function (io) {
       io.to(roomCode).emit('lobbyUpdate', room.getState());
     });
 
-    socket.on('quickJoin', ({ username, isGuest }, callback) => {
+    socket.on('quickJoin', ({ username, isGuest, skin }, callback) => {
       let room = findOpenRoom();
       let roomCode;
 
@@ -55,7 +55,7 @@ module.exports = function (io) {
         rooms[roomCode] = room;
       }
 
-      room.addPlayer(socket.id, username, !!isGuest);
+      room.addPlayer(socket.id, username, !!isGuest, skin);
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
       callback({ roomCode });

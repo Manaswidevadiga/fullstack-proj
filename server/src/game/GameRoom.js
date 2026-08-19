@@ -1,5 +1,7 @@
 const pool = require('../config/db');
 const { GRID_SIZE, TICK_RATE_MS, SHRINK_INTERVAL_MS } = require('./constants');
+const VALID_SKINS = ['classic', 'ocean', 'sunset', 'bubblegum', 'grape', 'gold'];
+const DEFAULT_SKIN = 'classic';
 
 class GameRoom {
   constructor(roomCode, io) {
@@ -15,7 +17,7 @@ class GameRoom {
     this.hostId = null;
   }
 
-  addPlayer(socketId, username, isGuest = false) {
+  addPlayer(socketId, username, isGuest = false, skin = DEFAULT_SKIN) {
     if (Object.keys(this.players).length === 0) {
       this.hostId = socketId; // first player in an empty room becomes host
     }
@@ -23,6 +25,7 @@ class GameRoom {
     this.players[socketId] = {
       username,
       isGuest,
+      skin: VALID_SKINS.includes(skin) ? skin : DEFAULT_SKIN, // never trust client input directly
       snake: [{ x: spawn.x, y: spawn.y }],
       direction: spawn.direction,
       pendingDirection: spawn.direction,
@@ -173,7 +176,10 @@ class GameRoom {
   getState() {
     return {
       players: Object.fromEntries(
-        Object.entries(this.players).map(([id, p]) => [id, { username: p.username, snake: p.snake, alive: p.alive }])
+        Object.entries(this.players).map(([id, p]) => [
+          id,
+          { username: p.username, snake: p.snake, alive: p.alive, skin: p.skin }
+        ])
       ),
       food: this.food,
       dangerRing: this.dangerRing,
