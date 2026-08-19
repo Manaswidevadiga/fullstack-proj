@@ -22,38 +22,44 @@ module.exports = function (io) {
     });
 
     socket.on('joinRoom', ({ roomCode, username }, callback) => {
-  console.log(`joinRoom attempt: roomCode="${roomCode}", username="${username}"`);
-  const room = rooms[roomCode];
-  if (!room) return callback({ error: 'Room not found' });
-  room.addPlayer(socket.id, username);
-  console.log('Players in room after join:', Object.keys(room.players));
-  socket.join(roomCode);
-  socket.data.roomCode = roomCode;
-  callback({ success: true });
-  io.to(roomCode).emit('lobbyUpdate', room.getState());
-});
+      console.log(`joinRoom attempt: roomCode="${roomCode}", username="${username}"`);
+      const room = rooms[roomCode];
+      if (!room) return callback({ error: 'Room not found' });
+      room.addPlayer(socket.id, username);
+      console.log('Players in room after join:', Object.keys(room.players));
+      socket.join(roomCode);
+      socket.data.roomCode = roomCode;
+      callback({ success: true });
+      io.to(roomCode).emit('lobbyUpdate', room.getState());
+    });
 
-socket.on('startGame', () => {
-  const room = rooms[socket.data.roomCode];
-  console.log(`startGame called. Room: ${socket.data.roomCode}, players:`, room ? Object.keys(room.players) : 'ROOM NOT FOUND');
-  if (room && !room.started) room.start();
-});
-socket.on('playAgain', () => {
-  const room = rooms[socket.data.roomCode];
-  if (!room) return;
+    socket.on('startGame', () => {
+      const room = rooms[socket.data.roomCode];
+      console.log(`startGame called. Room: ${socket.data.roomCode}, players:`, room ? Object.keys(room.players) : 'ROOM NOT FOUND');
+      if (!room) return;
+      if (!room.isHost(socket.id)) {
+        socket.emit('startGameError', { error: 'Only the room host can start the game' });
+        return;
+      }
+      if (!room.started) room.start();
+    });
 
-  room.rematchReady.add(socket.id);
-  const totalPlayers = Object.keys(room.players).length;
-  const readyCount = room.rematchReady.size;
+    socket.on('playAgain', () => {
+      const room = rooms[socket.data.roomCode];
+      if (!room) return;
 
-  io.to(socket.data.roomCode).emit('rematchStatus', { ready: readyCount, total: totalPlayers });
+      room.rematchReady.add(socket.id);
+      const totalPlayers = Object.keys(room.players).length;
+      const readyCount = room.rematchReady.size;
 
-  if (readyCount >= totalPlayers) {
-    room.resetForRematch();
-    io.to(socket.data.roomCode).emit('rematchReady', room.getState());
-    room.start();
-  }
-});
+      io.to(socket.data.roomCode).emit('rematchStatus', { ready: readyCount, total: totalPlayers });
+
+      if (readyCount >= totalPlayers) {
+        room.resetForRematch();
+        io.to(socket.data.roomCode).emit('rematchReady', room.getState());
+        room.start();
+      }
+    });
 
     socket.on('changeDirection', (dirName) => {
       const room = rooms[socket.data.roomCode];
@@ -63,15 +69,20 @@ socket.on('playAgain', () => {
     });
 
     socket.on('disconnect', () => {
-  const room = rooms[socket.data.roomCode];
-  if (room) {
-    room.removePlayer(socket.id);
-    io.to(socket.data.roomCode).emit('lobbyUpdate', room.getState());
-    io.to(socket.data.roomCode).emit('rematchStatus', {
-      ready: room.rematchReady.size,
-      total: Object.keys(room.players).length
+      const room = rooms[socket.data.roomCode];
+      if (room) {
+        room.removePlayer(socket.id);
+        if (Object.keys(room.players).length === 0) {
+          room.stop();
+          delete rooms[socket.data.roomCode];
+          return;
+        }
+        io.to(socket.data.roomCode).emit('lobbyUpdate', room.getState());
+        io.to(socket.data.roomCode).emit('rematchStatus', {
+          ready: room.rematchReady.size,
+          total: Object.keys(room.players).length
+        });
+      }
     });
-  }
-});
   });
 };
