@@ -1,10 +1,16 @@
 const GameRoom = require('../game/GameRoom');
-const { DIRECTIONS } = require('../game/constants');
+const { DIRECTIONS, MAX_PLAYERS_PER_ROOM } = require('../game/constants');
 
 const rooms = {};
 
 function generateRoomCode() {
   return Math.random().toString(36).substring(2, 7).toUpperCase();
+}
+
+function findOpenRoom() {
+  return Object.values(rooms).find(
+    (room) => !room.started && Object.keys(room.players).length < MAX_PLAYERS_PER_ROOM
+  );
 }
 
 module.exports = function (io) {
@@ -25,11 +31,34 @@ module.exports = function (io) {
       console.log(`joinRoom attempt: roomCode="${roomCode}", username="${username}"`);
       const room = rooms[roomCode];
       if (!room) return callback({ error: 'Room not found' });
+      if (room.started) return callback({ error: 'Game already in progress' });
+      if (Object.keys(room.players).length >= MAX_PLAYERS_PER_ROOM) {
+        return callback({ error: 'Room is full' });
+      }
       room.addPlayer(socket.id, username);
       console.log('Players in room after join:', Object.keys(room.players));
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
       callback({ success: true });
+      io.to(roomCode).emit('lobbyUpdate', room.getState());
+    });
+
+    socket.on('quickJoin', ({ username }, callback) => {
+      let room = findOpenRoom();
+      let roomCode;
+
+      if (room) {
+        roomCode = room.roomCode;
+      } else {
+        roomCode = generateRoomCode();
+        room = new GameRoom(roomCode, io);
+        rooms[roomCode] = room;
+      }
+
+      room.addPlayer(socket.id, username);
+      socket.join(roomCode);
+      socket.data.roomCode = roomCode;
+      callback({ roomCode });
       io.to(roomCode).emit('lobbyUpdate', room.getState());
     });
 
