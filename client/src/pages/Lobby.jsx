@@ -12,6 +12,7 @@ export default function Lobby() {
   const [joinCodeInput, setJoinCodeInput] = useState('')
   const [inRoom, setInRoom] = useState(false)
   const [players, setPlayers] = useState({})
+  const [hostId, setHostId] = useState(null)
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(!socket.connected)
 
@@ -27,16 +28,22 @@ export default function Lobby() {
     socket.on('lobbyUpdate', (roomState) => {
       console.log('lobbyUpdate:', roomState)
       setPlayers(roomState.players || {})
+      setHostId(roomState.hostId ?? null)
     })
 
     socket.on('gameState', () => {
       navigate('/game')
     })
 
+    socket.on('startGameError', ({ error: msg }) => {
+      setError(msg || 'Only the host can start the game.')
+    })
+
     return () => {
       socket.off('connect')
       socket.off('lobbyUpdate')
       socket.off('gameState')
+      socket.off('startGameError')
     }
   }, [navigate])
 
@@ -72,6 +79,8 @@ export default function Lobby() {
   const handleStartGame = () => {
     socket.emit('startGame')
   }
+
+  const isHost = hostId !== null && socket.id === hostId
 
   if (connecting) {
     return (
@@ -136,29 +145,38 @@ export default function Lobby() {
               <p className="text-zinc-400 text-sm mb-2">Players in room:</p>
               <ul className="space-y-1">
                 <AnimatePresence>
-                  {Object.values(players).map((p, i) => (
+                  {Object.entries(players).map(([id, p]) => (
                     <motion.li
-                      key={p.username + i}
+                      key={id}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0 }}
-                      className="text-white bg-zinc-800 rounded-lg px-3 py-2"
+                      className="text-white bg-zinc-800 rounded-lg px-3 py-2 flex items-center justify-between"
                     >
-                      {p.username}
+                      <span>{p.username}</span>
+                      {id === hostId && (
+                        <span className="text-xs text-green-400 font-semibold">HOST</span>
+                      )}
                     </motion.li>
                   ))}
                 </AnimatePresence>
               </ul>
             </div>
 
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={handleStartGame}
-              className="w-full bg-green-500 hover:bg-green-400 text-black font-semibold rounded-lg py-2 transition"
-            >
-              Start Game
-            </motion.button>
+            {isHost ? (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleStartGame}
+                className="w-full bg-green-500 hover:bg-green-400 text-black font-semibold rounded-lg py-2 transition"
+              >
+                Start Game
+              </motion.button>
+            ) : (
+              <div className="w-full text-center text-zinc-400 text-sm bg-zinc-800 rounded-lg py-2">
+                Waiting for host to start…
+              </div>
+            )}
           </div>
         )}
 
@@ -166,4 +184,4 @@ export default function Lobby() {
       </motion.div>
     </div>
   )
-} 
+}
