@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { socket } from '../lib/socket'
+import { SKINS, getSkinById } from '../lib/skins'
 
 const GRID_SIZE = 40
 const CELL_SIZE = 15
@@ -12,8 +13,6 @@ const KEY_MAP = {
   w: 'UP', s: 'DOWN', a: 'LEFT', d: 'RIGHT',
   W: 'UP', S: 'DOWN', A: 'LEFT', D: 'RIGHT',
 }
-
-const SNAKE_COLORS = ['#4ade80', '#38bdf8', '#facc15', '#f472b6', '#a78bfa', '#fb923c']
 
 // TEMPORARY: mock data generator for testing rendering without backend
 function generateMockGameState(tick) {
@@ -34,8 +33,8 @@ function generateMockGameState(tick) {
 
   return {
     players: {
-      player1: { username: 'Alice', snake: makeSnake(angle1), alive: true },
-      player2: { username: 'Bob', snake: makeSnake(angle2), alive: true },
+      player1: { username: 'Alice', snake: makeSnake(angle1), alive: true, skin: SKINS[0].id },
+      player2: { username: 'Bob', snake: makeSnake(angle2), alive: true, skin: SKINS[1].id },
     },
     food: { x: 20, y: 15 },
     dangerRing: Math.max(5, 20 - Math.floor(tick / 40)), // shrinks over time
@@ -151,24 +150,67 @@ export default function Game() {
       ctx.shadowBlur = 0
     }
 
-    // Snakes - rounded segments, distinct colors per player
+    // Snakes - cute rounded segments with a face on the head, colored per skin
     const playerEntries = Object.entries(gameState.players || {})
-    playerEntries.forEach(([id, player], idx) => {
-      if (!player.alive) return
-      const color = SNAKE_COLORS[idx % SNAKE_COLORS.length]
+    playerEntries.forEach(([id, player]) => {
+      if (!player.alive || !player.snake?.length) return
+      const skinData = getSkinById(player.skin)
 
+      // Body + head base shapes
       player.snake.forEach((seg, segIdx) => {
         const x = seg.x * CELL_SIZE
         const y = seg.y * CELL_SIZE
         const isHead = segIdx === 0
+        const color = isHead ? skinData.head : skinData.body
 
         ctx.fillStyle = color
         ctx.shadowColor = color
         ctx.shadowBlur = isHead ? 8 : 3
         ctx.beginPath()
-        ctx.roundRect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2, isHead ? 5 : 3)
+        ctx.roundRect(
+          x + 1,
+          y + 1,
+          CELL_SIZE - 2,
+          CELL_SIZE - 2,
+          isHead ? CELL_SIZE / 2 : 3
+        )
         ctx.fill()
         ctx.shadowBlur = 0
+      })
+
+      // Cute face on the head, oriented by facing direction
+      const head = player.snake[0]
+      const neck = player.snake[1] || head
+      let facing = { x: head.x - neck.x, y: head.y - neck.y }
+      if (facing.x === 0 && facing.y === 0) facing = { x: 1, y: 0 }
+
+      const hx = head.x * CELL_SIZE + CELL_SIZE / 2
+      const hy = head.y * CELL_SIZE + CELL_SIZE / 2
+      const perp = { x: -facing.y, y: facing.x }
+      const eyeSpacing = CELL_SIZE / 4
+      const eyeForward = CELL_SIZE / 6
+
+      const eyes = [1, -1].map((side) => ({
+        x: hx + perp.x * eyeSpacing * side + facing.x * eyeForward,
+        y: hy + perp.y * eyeSpacing * side + facing.y * eyeForward,
+      }))
+
+      eyes.forEach((eye) => {
+        ctx.beginPath()
+        ctx.arc(eye.x, eye.y, CELL_SIZE / 7, 0, Math.PI * 2)
+        ctx.fillStyle = '#ffffff'
+        ctx.fill()
+
+        ctx.beginPath()
+        ctx.arc(
+          eye.x + facing.x * 1.2,
+          eye.y + facing.y * 1.2,
+          CELL_SIZE / 14,
+          0,
+          Math.PI * 2
+        )
+        ctx.fillStyle = '#111827'
+        ctx.fill()
       })
     })
   }, [gameState])
@@ -281,7 +323,7 @@ export default function Game() {
           Players
         </h2>
         <ul className="space-y-2">
-          {players.map(([id, p], idx) => (
+          {players.map(([id, p]) => (
             <li
               key={id}
               className="flex items-center gap-2 text-sm"
@@ -289,7 +331,7 @@ export default function Game() {
             >
               <span
                 className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: SNAKE_COLORS[idx % SNAKE_COLORS.length] }}
+                style={{ backgroundColor: getSkinById(p.skin).head }}
               />
               <span className="text-white">{p.username}</span>
               {!p.alive && <span className="text-red-400 text-xs">(out)</span>}

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import { DEFAULT_SKIN_ID } from '../lib/skins'
 
 const AuthContext = createContext(null)
 
@@ -10,6 +11,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [token, setToken] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [skin, setSkin] = useState(() => localStorage.getItem('skin') || DEFAULT_SKIN_ID)
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token')
@@ -20,6 +22,10 @@ export function AuthProvider({ children }) {
     }
     setLoading(false)
   }, [])
+
+  useEffect(() => {
+    localStorage.setItem('skin', skin)
+  }, [skin])
 
   const loginUser = (userData, jwt) => {
     localStorage.setItem('token', jwt)
@@ -43,7 +49,9 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, loginUser, continueAsGuest, logoutUser }}>
+    <AuthContext.Provider
+      value={{ user, token, loading, loginUser, continueAsGuest, logoutUser, skin, setSkin }}
+    >
       {children}
     </AuthContext.Provider>
   )

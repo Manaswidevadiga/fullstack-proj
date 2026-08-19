@@ -5,7 +5,7 @@ import { socket } from '../lib/socket'
 import { useAuth } from '../context/AuthContext'
 
 export default function Lobby() {
-  const { user } = useAuth()
+  const { user, skin } = useAuth()
   const navigate = useNavigate()
 
   const [roomCode, setRoomCode] = useState('')
@@ -50,14 +50,18 @@ export default function Lobby() {
 
   const handleCreateRoom = () => {
     setError('')
-    socket.emit('createRoom', { username: user.username, isGuest: !!user.isGuest }, (res) => {
-      if (res?.roomCode) {
-        setRoomCode(res.roomCode)
-        setInRoom(true)
-      } else {
-        setError('Failed to create room.')
+    socket.emit(
+      'createRoom',
+      { username: user.username, isGuest: !!user.isGuest, skin },
+      (res) => {
+        if (res?.roomCode) {
+          setRoomCode(res.roomCode)
+          setInRoom(true)
+        } else {
+          setError('Failed to create room.')
+        }
       }
-    })
+    )
   }
 
   const handleJoinRoom = () => {
@@ -65,7 +69,12 @@ export default function Lobby() {
     if (!joinCodeInput.trim()) return
     socket.emit(
       'joinRoom',
-      { roomCode: joinCodeInput.trim().toUpperCase(), username: user.username, isGuest: !!user.isGuest },
+      {
+        roomCode: joinCodeInput.trim().toUpperCase(),
+        username: user.username,
+        isGuest: !!user.isGuest,
+        skin,
+      },
       (res) => {
         if (res?.success) {
           setRoomCode(joinCodeInput.trim().toUpperCase())
@@ -80,15 +89,19 @@ export default function Lobby() {
   const handleQuickJoin = () => {
     setError('')
     setFindingMatch(true)
-    socket.emit('quickJoin', { username: user.username, isGuest: !!user.isGuest }, (res) => {
-      setFindingMatch(false)
-      if (res?.roomCode) {
-        setRoomCode(res.roomCode)
-        setInRoom(true)
-      } else {
-        setError('Failed to find a match.')
+    socket.emit(
+      'quickJoin',
+      { username: user.username, isGuest: !!user.isGuest, skin },
+      (res) => {
+        setFindingMatch(false)
+        if (res?.roomCode) {
+          setRoomCode(res.roomCode)
+          setInRoom(true)
+        } else {
+          setError('Failed to find a match.')
+        }
       }
-    })
+    )
   }
 
   const handleStartGame = () => {
