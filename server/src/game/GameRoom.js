@@ -15,13 +15,14 @@ class GameRoom {
     this.hostId = null;
   }
 
-  addPlayer(socketId, username) {
+  addPlayer(socketId, username, isGuest = false) {
     if (Object.keys(this.players).length === 0) {
       this.hostId = socketId; // first player in an empty room becomes host
     }
     const spawn = this.getSpawnPoint(Object.keys(this.players).length);
     this.players[socketId] = {
       username,
+      isGuest,
       snake: [{ x: spawn.x, y: spawn.y }],
       direction: spawn.direction,
       pendingDirection: spawn.direction,
@@ -45,12 +46,12 @@ class GameRoom {
 
   getSpawnPoint(index) {
     const spawns = [
-      { x: 2, y: 2, direction: { x: 1, y: 0 } },                                    // top-left, move right
-      { x: GRID_SIZE - 3, y: 2, direction: { x: -1, y: 0 } },                       // top-right, move left
-      { x: 2, y: GRID_SIZE - 3, direction: { x: 1, y: 0 } },                        // bottom-left, move right
-      { x: GRID_SIZE - 3, y: GRID_SIZE - 3, direction: { x: -1, y: 0 } },           // bottom-right, move left
-      { x: Math.floor(GRID_SIZE / 2), y: 2, direction: { x: 0, y: 1 } },            // top-mid, move down
-      { x: Math.floor(GRID_SIZE / 2), y: GRID_SIZE - 3, direction: { x: 0, y: -1 } } // bottom-mid, move up
+      { x: 2, y: 2, direction: { x: 1, y: 0 } },
+      { x: GRID_SIZE - 3, y: 2, direction: { x: -1, y: 0 } },
+      { x: 2, y: GRID_SIZE - 3, direction: { x: 1, y: 0 } },
+      { x: GRID_SIZE - 3, y: GRID_SIZE - 3, direction: { x: -1, y: 0 } },
+      { x: Math.floor(GRID_SIZE / 2), y: 2, direction: { x: 0, y: 1 } },
+      { x: Math.floor(GRID_SIZE / 2), y: GRID_SIZE - 3, direction: { x: 0, y: -1 } }
     ];
     return spawns[index] || { x: 5, y: 5, direction: { x: 1, y: 0 } };
   }
@@ -181,11 +182,18 @@ class GameRoom {
   }
 
   async saveMatchResult(winnerEntry) {
-    const playerSnapshot = Object.values(this.players).map((p) => ({
-      username: p.username,
-      length: p.snake.length,
-      alive: p.alive
-    }));
+    const playerSnapshot = Object.values(this.players)
+      .filter((p) => !p.isGuest)
+      .map((p) => ({
+        username: p.username,
+        length: p.snake.length,
+        alive: p.alive
+      }));
+
+    if (playerSnapshot.length === 0) {
+      console.log(`Match in room ${this.roomCode} had no registered players — skipping save.`);
+      return;
+    }
 
     try {
       const matchResult = await pool.query(
@@ -200,7 +208,7 @@ class GameRoom {
           [matchId, player.username, player.length, player.alive ? 1 : null]
         );
       }
-      console.log(`Match ${matchId} saved (${playerSnapshot.length} players).`);
+      console.log(`Match ${matchId} saved (${playerSnapshot.length} registered players).`);
     } catch (err) {
       console.error('Failed to save match:', err);
     }
