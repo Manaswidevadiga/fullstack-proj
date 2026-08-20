@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { socket } from '../lib/socket'
 import { SKINS, getSkinById } from '../lib/skins'
+import { CORAL } from '../lib/theme'
 
 const GRID_SIZE = 40
 const CELL_SIZE = 15
@@ -39,6 +40,48 @@ function generateMockGameState(tick) {
     food: { x: 20, y: 15 },
     dangerRing: Math.max(5, 20 - Math.floor(tick / 40)), // shrinks over time
   }
+}
+
+// Deterministic pseudo-random, seeded — same seed always gives the same
+// jitter, so the hand-drawn ring stays stable between renders instead of
+// visibly vibrating at the tick rate.
+function seededRandom(seed) {
+  const x = Math.sin(seed) * 10000
+  return x - Math.floor(x)
+}
+
+function jitterPoint(px, py, seed, amount = 3) {
+  const rx = (seededRandom(seed) - 0.5) * 2 * amount
+  const ry = (seededRandom(seed + 1) - 0.5) * 2 * amount
+  return [px + rx, py + ry]
+}
+
+// Hand-drawn rectangle: draws the danger-zone boundary as a wobbly sketched
+// outline (two overlapping jittered passes) instead of a perfectly straight
+// rect, to match the sticker/doodle visual style.
+function drawRoughRect(ctx, x, y, w, h, seed, color) {
+  const corners = [
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h],
+  ]
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.beginPath()
+    corners.forEach(([cx, cy], i) => {
+      const [jx, jy] = jitterPoint(cx, cy, seed + i * 17 + pass * 131, 4)
+      if (i === 0) ctx.moveTo(jx, jy)
+      else ctx.lineTo(jx, jy)
+    })
+    ctx.closePath()
+    ctx.strokeStyle = color
+    ctx.lineWidth = pass === 0 ? 3 : 2
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
+    ctx.globalAlpha = pass === 0 ? 1 : 0.55
+    ctx.stroke()
+  }
+  ctx.globalAlpha = 1
 }
 
 export default function Game() {
@@ -114,7 +157,8 @@ export default function Game() {
       ctx.stroke()
     }
 
-    // Danger zone - shrinking safe area (square inset from edges)
+    // Danger zone - shrinking safe area (square inset from edges),
+    // drawn as a hand-sketched wobbly outline to match the sticker theme
     if (typeof gameState.dangerRing === 'number') {
       const inset = gameState.dangerRing * CELL_SIZE
       const safeX = inset
@@ -125,16 +169,11 @@ export default function Game() {
       ctx.beginPath()
       ctx.rect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
       ctx.rect(safeX, safeY, safeSize, safeSize)
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'
+      ctx.fillStyle = 'rgba(255, 107, 74, 0.14)' // coral tint instead of pure red
       ctx.fill('evenodd')
       ctx.restore()
 
-      ctx.strokeStyle = '#ef4444'
-      ctx.lineWidth = 2
-      ctx.shadowColor = '#ef4444'
-      ctx.shadowBlur = 8
-      ctx.strokeRect(safeX, safeY, safeSize, safeSize)
-      ctx.shadowBlur = 0
+      drawRoughRect(ctx, safeX, safeY, safeSize, safeSize, gameState.dangerRing, CORAL)
     }
 
     // Food - glowing red circle
@@ -156,7 +195,6 @@ export default function Game() {
       if (!player.alive || !player.snake?.length) return
       const skinData = getSkinById(player.skin)
 
-      // Body + head base shapes
       player.snake.forEach((seg, segIdx) => {
         const x = seg.x * CELL_SIZE
         const y = seg.y * CELL_SIZE
@@ -178,7 +216,6 @@ export default function Game() {
         ctx.shadowBlur = 0
       })
 
-      // Cute face on the head, oriented by facing direction
       const head = player.snake[0]
       const neck = player.snake[1] || head
       let facing = { x: head.x - neck.x, y: head.y - neck.y }

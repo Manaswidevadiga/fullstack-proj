@@ -2,88 +2,10 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import { SKINS } from '../lib/skins'
-
-const INK = '#1A1A1A'
-const PAPER = '#FFFDF7'
-const CORAL = '#FF6B4A'
-const SUN = '#FFD23F'
-const SKY = '#4FC3E8'
-const GRASS = '#7ED957'
-const BUBBLEGUM = '#FF6FA8'
+import { INK, PAPER, CORAL, SUN, SKY, BUBBLEGUM } from '../lib/theme'
+import { Star, Zigzag, ScribbleArrow, WobblyRing, BG_BLOBS } from '../components/Doodles'
 
 const stickerRotations = [-6, 4, -3, 6, -5, 3]
-
-const blobs = [
-  { size: 220, top: '-6%', left: '-8%', color: SKY, rotate: 12 },
-  { size: 180, top: '62%', left: '84%', color: SUN, rotate: -18 },
-  { size: 140, top: '4%', left: '80%', color: BUBBLEGUM, rotate: 20 },
-  { size: 160, top: '78%', left: '4%', color: GRASS, rotate: -10 },
-]
-
-function Star({ style }) {
-  return (
-    <svg viewBox="0 0 24 24" width="28" height="28" style={style}>
-      <path
-        d="M12 1 L14.5 9 L23 9 L16 14 L18.5 22 L12 17 L5.5 22 L8 14 L1 9 L9.5 9 Z"
-        fill={SUN}
-        stroke={INK}
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function Zigzag({ style, color = CORAL }) {
-  return (
-    <svg viewBox="0 0 60 20" width="60" height="20" style={style}>
-      <path
-        d="M2 18 L14 2 L26 18 L38 2 L50 18 L58 2"
-        fill="none"
-        stroke={color}
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function ScribbleArrow({ style }) {
-  return (
-    <svg viewBox="0 0 80 60" width="80" height="60" style={style}>
-      <path
-        d="M4 6 C 30 2, 40 30, 20 34 C 44 30, 60 20, 70 40"
-        fill="none"
-        stroke={INK}
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-      <path
-        d="M58 32 L72 40 L60 48"
-        fill="none"
-        stroke={INK}
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function WobblyRing({ style }) {
-  return (
-    <svg viewBox="0 0 220 90" width="100%" height="100%" style={style} preserveAspectRatio="none">
-      <path
-        d="M14 45 C 10 15, 60 6, 110 8 C 165 10, 212 20, 208 46 C 204 76, 150 84, 108 82 C 55 80, 18 74, 14 45 Z"
-        fill="none"
-        stroke={CORAL}
-        strokeWidth="4"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
 
 export default function Home() {
   const { user, continueAsGuest, skin, setSkin } = useAuth()
@@ -105,8 +27,7 @@ export default function Home() {
         backgroundSize: '22px 22px',
       }}
     >
-      {/* Soft background blobs */}
-      {blobs.map((b, i) => (
+      {BG_BLOBS.map((b, i) => (
         <motion.div
           key={i}
           className="absolute pointer-events-none"
@@ -124,7 +45,6 @@ export default function Home() {
         />
       ))}
 
-      {/* Doodle accents */}
       <Star style={{ position: 'absolute', top: '10%', left: '14%', transform: 'rotate(-8deg)' }} />
       <Star style={{ position: 'absolute', top: '78%', left: '88%', transform: 'rotate(14deg) scale(0.8)' }} />
       <Zigzag style={{ position: 'absolute', top: '20%', left: '84%', transform: 'rotate(-6deg)' }} />

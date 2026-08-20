@@ -1,0 +1,7 @@
+export const INK = '#1A1A1A'
+export const PAPER = '#FFFDF7'
+export const CORAL = '#FF6B4A'
+export const SUN = '#FFD23F'
+export const SKY = '#4FC3E8'
+export const GRASS = '#7ED957'
+export const BUBBLEGUM = '#FF6FA8'

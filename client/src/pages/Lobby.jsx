@@ -3,16 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { socket } from '../lib/socket'
 import { useAuth } from '../context/AuthContext'
+import { INK, PAPER, CORAL, SUN, SKY, GRASS } from '../lib/theme'
+import { Star, Zigzag, WobblyRing, BG_BLOBS } from '../components/Doodles'
 
-const BG = 'linear-gradient(180deg, #6FE3FF 0%, #B9F6C9 100%)'
-
-const floatingShapes = [
-  { size: 90, top: '8%', left: '6%', delay: 0 },
-  { size: 60, top: '18%', left: '82%', delay: 0.6 },
-  { size: 120, top: '68%', left: '10%', delay: 1.1 },
-  { size: 70, top: '75%', left: '78%', delay: 0.3 },
-  { size: 45, top: '40%', left: '90%', delay: 0.9 },
-]
+const chipRotations = [-3, 2, -2, 3, -1, 1]
 
 export default function Lobby() {
   const { user, skin } = useAuth()
@@ -120,51 +114,77 @@ export default function Lobby() {
 
   const isHost = hostId !== null && socket.id === hostId
 
+  const bgStyle = {
+    background: PAPER,
+    backgroundImage: 'radial-gradient(#e7e2d3 1.4px, transparent 1.4px)',
+    backgroundSize: '22px 22px',
+  }
+
   if (connecting) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: BG }}>
-        <p style={{ fontFamily: "'Nunito', sans-serif", color: '#14213D' }}>Connecting to server...</p>
+      <div className="min-h-screen flex items-center justify-center" style={bgStyle}>
+        <p style={{ fontFamily: "'Kalam', cursive", color: INK }}>connecting to server...</p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4" style={{ background: BG }}>
-      {floatingShapes.map((shape, i) => (
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4" style={bgStyle}>
+      {BG_BLOBS.map((b, i) => (
         <motion.div
           key={i}
-          className="absolute rounded-full bg-white/25 pointer-events-none"
-          style={{ width: shape.size, height: shape.size, top: shape.top, left: shape.left }}
-          animate={{ y: [0, -18, 0] }}
-          transition={{ duration: 4 + i, repeat: Infinity, ease: 'easeInOut', delay: shape.delay }}
+          className="absolute pointer-events-none"
+          style={{
+            width: b.size,
+            height: b.size,
+            top: b.top,
+            left: b.left,
+            background: b.color,
+            opacity: 0.28,
+            borderRadius: '58% 42% 65% 35% / 45% 55% 45% 55%',
+          }}
+          animate={{ rotate: [b.rotate, b.rotate + 10, b.rotate] }}
+          transition={{ duration: 10 + i * 2, repeat: Infinity, ease: 'easeInOut' }}
         />
       ))}
 
+      <Star style={{ position: 'absolute', top: '12%', left: '10%', transform: 'rotate(10deg)' }} />
+      <Zigzag style={{ position: 'absolute', top: '80%', left: '86%', transform: 'rotate(-8deg)' }} color={SKY} />
+
       <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
+        initial={{ opacity: 0, y: 20, scale: 0.96, rotate: 2 }}
+        animate={{ opacity: 1, y: 0, scale: 1, rotate: 1 }}
         transition={{ duration: 0.4, ease: 'easeOut' }}
-        className="relative z-10 w-full max-w-md bg-white rounded-[32px] shadow-[0_20px_60px_rgba(20,33,61,0.25)] p-8"
+        className="relative z-10 w-full max-w-md bg-white rounded-[28px] p-8"
+        style={{ border: `4px solid ${INK}`, boxShadow: `8px 8px 0 ${INK}` }}
       >
         {inRoom ? (
-          <div className="mx-auto mb-6 w-fit px-6 py-2 rounded-2xl border-[3px] border-dashed" style={{ borderColor: '#FF5D8F' }}>
-            <p
-              className="text-xs text-center mb-0.5"
-              style={{ fontFamily: "'Nunito', sans-serif", color: '#8A94AD', fontWeight: 700, letterSpacing: '0.08em' }}
-            >
-              ROOM CODE
-            </p>
-            <p
-              className="text-2xl text-center tracking-[0.2em]"
-              style={{ fontFamily: "'JetBrains Mono', monospace", color: '#14213D', fontWeight: 700 }}
-            >
-              {roomCode}
-            </p>
+          <div className="relative mx-auto mb-6 w-fit" style={{ height: 78 }}>
+            <WobblyRing style={{ position: 'absolute', inset: '-14px -18px' }} color={CORAL} />
+            <div className="relative px-8 py-2 text-center">
+              <p
+                className="text-xs mb-0.5"
+                style={{ fontFamily: "'Kalam', cursive", color: '#6B6558', fontWeight: 700, letterSpacing: '0.06em' }}
+              >
+                room code
+              </p>
+              <p
+                className="text-2xl tracking-[0.2em]"
+                style={{ fontFamily: "'JetBrains Mono', monospace", color: INK, fontWeight: 700 }}
+              >
+                {roomCode}
+              </p>
+            </div>
           </div>
         ) : (
           <h1
-            className="text-3xl mb-6 text-center"
-            style={{ fontFamily: "'Fredoka', sans-serif", color: '#14213D', fontWeight: 700 }}
+            className="text-4xl mb-6 text-center"
+            style={{
+              fontFamily: "'Bangers', cursive",
+              color: SKY,
+              WebkitTextStroke: `1.5px ${INK}`,
+              letterSpacing: '0.02em',
+            }}
           >
             Lobby
           </h1>
@@ -173,74 +193,77 @@ export default function Lobby() {
         {!inRoom && (
           <div className="space-y-5">
             <motion.button
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.95, y: 3 }}
+              whileHover={{ scale: 1.03, rotate: -1 }}
+              whileTap={{ scale: 0.95, y: 3, rotate: 0 }}
               onClick={handleQuickJoin}
               disabled={findingMatch}
-              className="w-full py-4 rounded-2xl text-lg disabled:opacity-60"
+              className="w-full py-4 rounded-2xl text-xl disabled:opacity-60"
               style={{
-                fontFamily: "'Fredoka', sans-serif",
-                fontWeight: 600,
-                color: '#14213D',
-                background: 'linear-gradient(180deg, #FFD166 0%, #FFB627 100%)',
-                boxShadow: '0 6px 0 #E8960B',
+                fontFamily: "'Bangers', cursive",
+                letterSpacing: '0.02em',
+                color: INK,
+                background: SUN,
+                border: `4px solid ${INK}`,
+                boxShadow: `6px 6px 0 ${INK}`,
               }}
             >
-              {findingMatch ? 'Finding a match…' : '⚡ Quick Match'}
+              {findingMatch ? 'finding a match…' : '⚡ QUICK MATCH'}
             </motion.button>
 
             <div className="flex items-center gap-2">
-              <div className="flex-1 h-px" style={{ backgroundColor: '#E4E9F5' }} />
-              <span className="text-xs" style={{ fontFamily: "'Nunito', sans-serif", color: '#8A94AD' }}>
+              <div className="flex-1 h-px" style={{ backgroundColor: '#E4DFCF' }} />
+              <span className="text-xs" style={{ fontFamily: "'Kalam', cursive", color: '#8A8372' }}>
                 or play with friends
               </span>
-              <div className="flex-1 h-px" style={{ backgroundColor: '#E4E9F5' }} />
+              <div className="flex-1 h-px" style={{ backgroundColor: '#E4DFCF' }} />
             </div>
 
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.96, y: 3 }}
+              whileHover={{ scale: 1.02, rotate: 1 }}
+              whileTap={{ scale: 0.96, y: 3, rotate: 0 }}
               onClick={handleCreateRoom}
-              className="w-full py-3 rounded-2xl"
+              className="w-full py-3 rounded-2xl text-lg"
               style={{
-                fontFamily: "'Fredoka', sans-serif",
-                fontWeight: 600,
+                fontFamily: "'Bangers', cursive",
+                letterSpacing: '0.02em',
                 color: '#fff',
-                background: '#4CD97B',
-                boxShadow: '0 5px 0 #34B15E',
+                background: GRASS,
+                border: `4px solid ${INK}`,
+                boxShadow: `5px 5px 0 ${INK}`,
               }}
             >
-              Create Room
+              CREATE ROOM
             </motion.button>
 
             <div className="space-y-2">
               <input
                 type="text"
-                placeholder="Enter room code"
+                placeholder="enter room code"
                 value={joinCodeInput}
                 onChange={(e) => setJoinCodeInput(e.target.value)}
                 className="w-full rounded-2xl px-4 py-3 outline-none uppercase text-center tracking-[0.15em]"
                 style={{
                   fontFamily: "'JetBrains Mono', monospace",
-                  color: '#14213D',
-                  background: '#F5F7FB',
-                  border: '2px solid #E4E9F5',
+                  color: INK,
+                  background: PAPER,
+                  border: `3px solid ${INK}`,
                 }}
               />
               <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.96, y: 3 }}
+                whileHover={{ scale: 1.02, rotate: -1 }}
+                whileTap={{ scale: 0.96, y: 3, rotate: 0 }}
                 onClick={handleJoinRoom}
-                className="w-full py-3 rounded-2xl"
+                className="w-full py-3 rounded-2xl text-lg"
                 style={{
-                  fontFamily: "'Fredoka', sans-serif",
-                  fontWeight: 600,
-                  color: '#14213D',
-                  background: '#F5F7FB',
-                  border: '2px solid #E4E9F5',
+                  fontFamily: "'Bangers', cursive",
+                  letterSpacing: '0.02em',
+                  color: INK,
+                  background: '#fff',
+                  border: `3px solid ${INK}`,
+                  boxShadow: `4px 4px 0 ${INK}`,
                 }}
               >
-                Join Room
+                JOIN ROOM
               </motion.button>
             </div>
           </div>
@@ -249,31 +272,36 @@ export default function Lobby() {
         {inRoom && (
           <div className="space-y-4">
             <div>
-              <p className="text-sm mb-2" style={{ fontFamily: "'Nunito', sans-serif", color: '#8A94AD', fontWeight: 700 }}>
-                Players in room
+              <p className="text-sm mb-2" style={{ fontFamily: "'Kalam', cursive", color: '#6B6558', fontWeight: 700 }}>
+                players in room
               </p>
               <ul className="space-y-2">
                 <AnimatePresence>
-                  {Object.entries(players).map(([id, p]) => (
+                  {Object.entries(players).map(([id, p], i) => (
                     <motion.li
                       key={id}
                       layout
-                      initial={{ opacity: 0, scale: 0.8, y: -8 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-                      className="flex items-center justify-between rounded-2xl px-4 py-2.5"
-                      style={{ background: '#F5F7FB' }}
+                      initial={{ opacity: 0, scale: 0.7, y: -10, rotate: 0 }}
+                      animate={{
+                        opacity: 1,
+                        scale: 1,
+                        y: 0,
+                        rotate: chipRotations[i % chipRotations.length],
+                      }}
+                      exit={{ opacity: 0, scale: 0.7 }}
+                      transition={{ type: 'spring', stiffness: 380, damping: 18 }}
+                      className="flex items-center justify-between rounded-xl px-4 py-2.5"
+                      style={{ background: '#FFF9EC', border: `2.5px solid ${INK}` }}
                     >
-                      <span style={{ fontFamily: "'Nunito', sans-serif", color: '#14213D', fontWeight: 700 }}>
+                      <span style={{ fontFamily: "'Kalam', cursive", color: INK, fontWeight: 700 }}>
                         {p.username}
                       </span>
                       {id === hostId && (
                         <span
                           className="text-xs px-2 py-0.5 rounded-full"
-                          style={{ background: '#FFE29A', color: '#8A5C00', fontFamily: "'Nunito', sans-serif", fontWeight: 800 }}
+                          style={{ background: SUN, color: INK, border: `1.5px solid ${INK}`, fontFamily: "'Kalam', cursive", fontWeight: 700 }}
                         >
-                          👑 HOST
+                          👑 host
                         </span>
                       )}
                     </motion.li>
@@ -284,35 +312,42 @@ export default function Lobby() {
 
             {isHost ? (
               <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.95, y: 4 }}
+                whileHover={{ scale: 1.03, rotate: -1 }}
+                whileTap={{ scale: 0.95, y: 4, rotate: 0 }}
                 onClick={handleStartGame}
-                className="w-full py-4 rounded-2xl text-lg"
+                className="w-full py-4 rounded-2xl text-xl"
                 style={{
-                  fontFamily: "'Fredoka', sans-serif",
-                  fontWeight: 600,
+                  fontFamily: "'Bangers', cursive",
+                  letterSpacing: '0.02em',
                   color: '#fff',
-                  background: '#4CD97B',
-                  boxShadow: '0 6px 0 #34B15E',
+                  background: GRASS,
+                  border: `4px solid ${INK}`,
+                  boxShadow: `6px 6px 0 ${INK}`,
                 }}
               >
-                Start Game
+                START GAME
               </motion.button>
             ) : (
               <motion.div
                 animate={{ opacity: [0.6, 1, 0.6] }}
                 transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
                 className="w-full text-center rounded-2xl py-3"
-                style={{ background: '#F5F7FB', color: '#8A94AD', fontFamily: "'Nunito', sans-serif", fontWeight: 700 }}
+                style={{
+                  background: '#FFF9EC',
+                  color: '#6B6558',
+                  fontFamily: "'Kalam', cursive",
+                  fontWeight: 700,
+                  border: `2.5px dashed ${INK}`,
+                }}
               >
-                Waiting for host to start…
+                waiting for host to start…
               </motion.div>
             )}
           </div>
         )}
 
         {error && (
-          <p className="text-sm text-center mt-4" style={{ fontFamily: "'Nunito', sans-serif", color: '#FF5D8F' }}>
+          <p className="text-sm text-center mt-4" style={{ fontFamily: "'Kalam', cursive", color: CORAL, fontWeight: 700 }}>
             {error}
           </p>
         )}
