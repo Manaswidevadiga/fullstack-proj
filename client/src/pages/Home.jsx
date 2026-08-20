@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
 import { SKINS } from '../lib/skins'
 import { INK, PAPER, CORAL, SUN, SKY, BUBBLEGUM } from '../lib/theme'
-import { Star, Zigzag, ScribbleArrow, WobblyRing, BG_BLOBS } from '../components/Doodles'
+import { Star, Zigzag, ScribbleArrow, WobblyRing, BG_BLOBS } from '../components/doodles'
 
 const stickerRotations = [-6, 4, -3, 6, -5, 3]
 
