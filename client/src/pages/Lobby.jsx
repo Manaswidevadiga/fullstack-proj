@@ -4,6 +4,16 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { socket } from '../lib/socket'
 import { useAuth } from '../context/AuthContext'
 
+const BG = 'linear-gradient(180deg, #6FE3FF 0%, #B9F6C9 100%)'
+
+const floatingShapes = [
+  { size: 90, top: '8%', left: '6%', delay: 0 },
+  { size: 60, top: '18%', left: '82%', delay: 0.6 },
+  { size: 120, top: '68%', left: '10%', delay: 1.1 },
+  { size: 70, top: '75%', left: '78%', delay: 0.3 },
+  { size: 45, top: '40%', left: '90%', delay: 0.9 },
+]
+
 export default function Lobby() {
   const { user, skin } = useAuth()
   const navigate = useNavigate()
@@ -112,47 +122,93 @@ export default function Lobby() {
 
   if (connecting) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <p className="text-zinc-400">Connecting to server...</p>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: BG }}>
+        <p style={{ fontFamily: "'Nunito', sans-serif", color: '#14213D' }}>Connecting to server...</p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center px-4">
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center px-4" style={{ background: BG }}>
+      {floatingShapes.map((shape, i) => (
+        <motion.div
+          key={i}
+          className="absolute rounded-full bg-white/25 pointer-events-none"
+          style={{ width: shape.size, height: shape.size, top: shape.top, left: shape.left }}
+          animate={{ y: [0, -18, 0] }}
+          transition={{ duration: 4 + i, repeat: Infinity, ease: 'easeInOut', delay: shape.delay }}
+        />
+      ))}
+
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0, y: 20, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.4, ease: 'easeOut' }}
-        className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-8"
+        className="relative z-10 w-full max-w-md bg-white rounded-[32px] shadow-[0_20px_60px_rgba(20,33,61,0.25)] p-8"
       >
-        <h1 className="text-2xl font-bold text-green-400 mb-6 text-center">
-          {inRoom ? `Room: ${roomCode}` : 'Lobby'}
-        </h1>
+        {inRoom ? (
+          <div className="mx-auto mb-6 w-fit px-6 py-2 rounded-2xl border-[3px] border-dashed" style={{ borderColor: '#FF5D8F' }}>
+            <p
+              className="text-xs text-center mb-0.5"
+              style={{ fontFamily: "'Nunito', sans-serif", color: '#8A94AD', fontWeight: 700, letterSpacing: '0.08em' }}
+            >
+              ROOM CODE
+            </p>
+            <p
+              className="text-2xl text-center tracking-[0.2em]"
+              style={{ fontFamily: "'JetBrains Mono', monospace", color: '#14213D', fontWeight: 700 }}
+            >
+              {roomCode}
+            </p>
+          </div>
+        ) : (
+          <h1
+            className="text-3xl mb-6 text-center"
+            style={{ fontFamily: "'Fredoka', sans-serif", color: '#14213D', fontWeight: 700 }}
+          >
+            Lobby
+          </h1>
+        )}
 
         {!inRoom && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.95, y: 3 }}
               onClick={handleQuickJoin}
               disabled={findingMatch}
-              className="w-full bg-yellow-400 hover:bg-yellow-300 text-black font-bold rounded-lg py-3 transition disabled:opacity-60"
+              className="w-full py-4 rounded-2xl text-lg disabled:opacity-60"
+              style={{
+                fontFamily: "'Fredoka', sans-serif",
+                fontWeight: 600,
+                color: '#14213D',
+                background: 'linear-gradient(180deg, #FFD166 0%, #FFB627 100%)',
+                boxShadow: '0 6px 0 #E8960B',
+              }}
             >
               {findingMatch ? 'Finding a match…' : '⚡ Quick Match'}
             </motion.button>
 
             <div className="flex items-center gap-2">
-              <div className="flex-1 h-px bg-zinc-700" />
-              <span className="text-zinc-500 text-sm">or play with friends</span>
-              <div className="flex-1 h-px bg-zinc-700" />
+              <div className="flex-1 h-px" style={{ backgroundColor: '#E4E9F5' }} />
+              <span className="text-xs" style={{ fontFamily: "'Nunito', sans-serif", color: '#8A94AD' }}>
+                or play with friends
+              </span>
+              <div className="flex-1 h-px" style={{ backgroundColor: '#E4E9F5' }} />
             </div>
 
             <motion.button
               whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileTap={{ scale: 0.96, y: 3 }}
               onClick={handleCreateRoom}
-              className="w-full bg-green-500 hover:bg-green-400 text-black font-semibold rounded-lg py-2 transition"
+              className="w-full py-3 rounded-2xl"
+              style={{
+                fontFamily: "'Fredoka', sans-serif",
+                fontWeight: 600,
+                color: '#fff',
+                background: '#4CD97B',
+                boxShadow: '0 5px 0 #34B15E',
+              }}
             >
               Create Room
             </motion.button>
@@ -163,13 +219,26 @@ export default function Lobby() {
                 placeholder="Enter room code"
                 value={joinCodeInput}
                 onChange={(e) => setJoinCodeInput(e.target.value)}
-                className="w-full bg-zinc-800 text-white rounded-lg px-3 py-2 outline-none border border-zinc-700 focus:border-green-400 uppercase"
+                className="w-full rounded-2xl px-4 py-3 outline-none uppercase text-center tracking-[0.15em]"
+                style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: '#14213D',
+                  background: '#F5F7FB',
+                  border: '2px solid #E4E9F5',
+                }}
               />
               <motion.button
                 whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                whileTap={{ scale: 0.96, y: 3 }}
                 onClick={handleJoinRoom}
-                className="w-full bg-zinc-700 hover:bg-zinc-600 text-white font-semibold rounded-lg py-2 transition"
+                className="w-full py-3 rounded-2xl"
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontWeight: 600,
+                  color: '#14213D',
+                  background: '#F5F7FB',
+                  border: '2px solid #E4E9F5',
+                }}
               >
                 Join Room
               </motion.button>
@@ -180,20 +249,32 @@ export default function Lobby() {
         {inRoom && (
           <div className="space-y-4">
             <div>
-              <p className="text-zinc-400 text-sm mb-2">Players in room:</p>
-              <ul className="space-y-1">
+              <p className="text-sm mb-2" style={{ fontFamily: "'Nunito', sans-serif", color: '#8A94AD', fontWeight: 700 }}>
+                Players in room
+              </p>
+              <ul className="space-y-2">
                 <AnimatePresence>
                   {Object.entries(players).map(([id, p]) => (
                     <motion.li
                       key={id}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0 }}
-                      className="text-white bg-zinc-800 rounded-lg px-3 py-2 flex items-center justify-between"
+                      layout
+                      initial={{ opacity: 0, scale: 0.8, y: -8 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                      className="flex items-center justify-between rounded-2xl px-4 py-2.5"
+                      style={{ background: '#F5F7FB' }}
                     >
-                      <span>{p.username}</span>
+                      <span style={{ fontFamily: "'Nunito', sans-serif", color: '#14213D', fontWeight: 700 }}>
+                        {p.username}
+                      </span>
                       {id === hostId && (
-                        <span className="text-xs text-green-400 font-semibold">HOST</span>
+                        <span
+                          className="text-xs px-2 py-0.5 rounded-full"
+                          style={{ background: '#FFE29A', color: '#8A5C00', fontFamily: "'Nunito', sans-serif", fontWeight: 800 }}
+                        >
+                          👑 HOST
+                        </span>
                       )}
                     </motion.li>
                   ))}
@@ -203,22 +284,38 @@ export default function Lobby() {
 
             {isHost ? (
               <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.95, y: 4 }}
                 onClick={handleStartGame}
-                className="w-full bg-green-500 hover:bg-green-400 text-black font-semibold rounded-lg py-2 transition"
+                className="w-full py-4 rounded-2xl text-lg"
+                style={{
+                  fontFamily: "'Fredoka', sans-serif",
+                  fontWeight: 600,
+                  color: '#fff',
+                  background: '#4CD97B',
+                  boxShadow: '0 6px 0 #34B15E',
+                }}
               >
                 Start Game
               </motion.button>
             ) : (
-              <div className="w-full text-center text-zinc-400 text-sm bg-zinc-800 rounded-lg py-2">
+              <motion.div
+                animate={{ opacity: [0.6, 1, 0.6] }}
+                transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+                className="w-full text-center rounded-2xl py-3"
+                style={{ background: '#F5F7FB', color: '#8A94AD', fontFamily: "'Nunito', sans-serif", fontWeight: 700 }}
+              >
                 Waiting for host to start…
-              </div>
+              </motion.div>
             )}
           </div>
         )}
 
-        {error && <p className="text-red-400 text-sm text-center mt-4">{error}</p>}
+        {error && (
+          <p className="text-sm text-center mt-4" style={{ fontFamily: "'Nunito', sans-serif", color: '#FF5D8F' }}>
+            {error}
+          </p>
+        )}
       </motion.div>
     </div>
   )
