@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { socket } from '../lib/socket'
 import { SKINS, getSkinById } from '../lib/skins'
 import { INK, PAPER, CORAL, SUN, SKY, GRASS } from '../lib/theme'
-import { Star, Zigzag, SnakeDoodle, BG_BLOBS } from '../components/Doodles'
+import { Star, Zigzag, SnakeDoodle, BG_BLOBS } from '../components/doodles'
 
 const GRID_SIZE = 40
 const CELL_SIZE = 15
