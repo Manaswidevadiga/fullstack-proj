@@ -65,7 +65,27 @@ export function WobblyRing({ style, color = CORAL }) {
   )
 }
 
-// Reusable background blob set — used on Home and Lobby for visual continuity.
+// Cute waving snake doodle — small decorative accent used across pages
+// (distinct from the in-game snake rendering in Game.jsx).
+export function SnakeDoodle({ style, color = GRASS }) {
+  return (
+    <svg viewBox="0 0 90 60" width="70" height="47" style={style}>
+      <path
+        d="M6 40 C 6 20, 22 10, 34 20 C 46 30, 30 40, 24 32 C 20 26, 30 22, 36 28
+           C 46 38, 64 38, 72 26"
+        fill="none"
+        stroke={color}
+        strokeWidth="7"
+        strokeLinecap="round"
+      />
+      <circle cx="74" cy="23" r="8" fill={color} stroke={INK} strokeWidth="2" />
+      <circle cx="77" cy="20" r="1.4" fill={INK} />
+      <path d="M81 25 L88 28 M81 25 L86 22" stroke={CORAL} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// Reusable background blob set — used across pages for visual continuity.
 export const BG_BLOBS = [
   { size: 220, top: '-6%', left: '-8%', color: SKY, rotate: 12 },
   { size: 180, top: '62%', left: '84%', color: SUN, rotate: -18 },

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { socket } from '../lib/socket'
 import { SKINS, getSkinById } from '../lib/skins'
-import { CORAL } from '../lib/theme'
+import { INK, PAPER, CORAL, SUN, SKY, GRASS } from '../lib/theme'
+import { Star, Zigzag, SnakeDoodle, BG_BLOBS } from '../components/Doodles'
 
 const GRID_SIZE = 40
 const CELL_SIZE = 15
@@ -254,54 +255,107 @@ export default function Game() {
 
   if (winner !== undefined) {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
-        <motion.h1
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="text-4xl font-bold text-green-400"
+      <div
+        className="min-h-screen relative overflow-hidden flex flex-col items-center justify-center gap-4 px-4"
+        style={{
+          background: PAPER,
+          backgroundImage: 'radial-gradient(#e7e2d3 1.4px, transparent 1.4px)',
+          backgroundSize: '22px 22px',
+        }}
+      >
+        {BG_BLOBS.map((b, i) => (
+          <motion.div
+            key={i}
+            className="absolute pointer-events-none"
+            style={{
+              width: b.size,
+              height: b.size,
+              top: b.top,
+              left: b.left,
+              background: b.color,
+              opacity: 0.28,
+              borderRadius: '58% 42% 65% 35% / 45% 55% 45% 55%',
+            }}
+            animate={{ rotate: [b.rotate, b.rotate + 10, b.rotate] }}
+            transition={{ duration: 10 + i * 2, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        ))}
+        <Star style={{ position: 'absolute', top: '14%', left: '12%', transform: 'rotate(-10deg)' }} />
+        <Zigzag style={{ position: 'absolute', top: '16%', right: '12%' }} color={SKY} />
+        <SnakeDoodle style={{ position: 'absolute', bottom: '10%', left: '8%', transform: 'rotate(-6deg)' }} />
+        <SnakeDoodle
+          style={{ position: 'absolute', bottom: '12%', right: '10%', transform: 'scaleX(-1) rotate(-4deg)' }}
+          color={SKY}
+        />
+
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.9, rotate: -3 }}
+          animate={{ opacity: 1, y: 0, scale: 1, rotate: -1 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 16 }}
+          className="relative z-10 bg-white rounded-[28px] px-8 py-10 text-center max-w-md w-full"
+          style={{ border: `4px solid ${INK}`, boxShadow: `8px 8px 0 ${INK}` }}
         >
-          {winner ? `${winner} wins!` : 'Game Over — No Winner'}
-        </motion.h1>
+          <motion.h1
+            initial={{ scale: 0.7, rotate: -8 }}
+            animate={{ scale: 1, rotate: -2 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 12, delay: 0.1 }}
+            className="text-4xl mb-6"
+            style={{
+              fontFamily: "'Bangers', cursive",
+              color: winner ? SUN : CORAL,
+              WebkitTextStroke: `2px ${INK}`,
+              letterSpacing: '0.02em',
+            }}
+          >
+            {winner ? `${winner} wins! 🎉` : 'no winner!'}
+          </motion.h1>
 
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex gap-3">
-            <motion.button
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-              whileHover={{ scale: iAmReady ? 1 : 1.05 }}
-              whileTap={{ scale: iAmReady ? 1 : 0.95 }}
-              disabled={iAmReady}
-              onClick={() => { socket.emit('playAgain'); setIAmReady(true) }}
-              className={`font-semibold rounded-lg px-6 py-2 transition ${
-                iAmReady
-                  ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
-                  : 'bg-green-500 hover:bg-green-400 text-black'
-              }`}
-            >
-              {iAmReady ? 'Waiting...' : 'Play Again'}
-            </motion.button>
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex gap-3">
+              <motion.button
+                whileHover={{ scale: iAmReady ? 1 : 1.04, rotate: iAmReady ? 0 : -1 }}
+                whileTap={{ scale: iAmReady ? 1 : 0.95, y: iAmReady ? 0 : 3 }}
+                disabled={iAmReady}
+                onClick={() => { socket.emit('playAgain'); setIAmReady(true) }}
+                className="rounded-2xl px-6 py-3 text-lg"
+                style={{
+                  fontFamily: "'Bangers', cursive",
+                  letterSpacing: '0.02em',
+                  color: iAmReady ? '#9C9585' : '#fff',
+                  background: iAmReady ? '#EFEAD9' : GRASS,
+                  border: `3px solid ${INK}`,
+                  boxShadow: iAmReady ? 'none' : `5px 5px 0 ${INK}`,
+                  cursor: iAmReady ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {iAmReady ? 'waiting...' : 'PLAY AGAIN'}
+              </motion.button>
 
-            <motion.button
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => navigate('/lobby')}
-              className="bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-lg px-6 py-2 transition"
-            >
-              Back to Lobby
-            </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.04, rotate: 1 }}
+                whileTap={{ scale: 0.95, y: 3 }}
+                onClick={() => navigate('/lobby')}
+                className="rounded-2xl px-6 py-3 text-lg"
+                style={{
+                  fontFamily: "'Bangers', cursive",
+                  letterSpacing: '0.02em',
+                  color: INK,
+                  background: '#fff',
+                  border: `3px solid ${INK}`,
+                  boxShadow: `5px 5px 0 ${INK}`,
+                }}
+              >
+                LOBBY
+              </motion.button>
+            </div>
+
+            {rematchStatus && (
+              <p className="text-sm" style={{ fontFamily: "'Kalam', cursive", color: '#6B6558' }}>
+                waiting for other players... ({rematchStatus.ready}/{rematchStatus.total} ready)
+              </p>
+            )}
           </div>
-
-          {rematchStatus && (
-            <p className="text-zinc-400 text-sm">
-              Waiting for other players... ({rematchStatus.ready}/{rematchStatus.total} ready)
-            </p>
-          )}
-        </div>
+        </motion.div>
       </div>
     )
   }
