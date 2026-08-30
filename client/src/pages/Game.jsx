@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { socket } from '../lib/socket'
 import { SKINS, getSkinById } from '../lib/skins'
-import { INK, PAPER, CORAL, SUN, SKY, GRASS } from '../lib/theme'
-import { Star, Zigzag, SnakeDoodle, BG_BLOBS } from '../components/doodles'
+import { INK, PAPER, CORAL, SUN, SKY, GRASS, BUBBLEGUM } from '../lib/theme'
+import { Star, Zigzag, SnakeDoodle, BG_BLOBS } from '../components/Doodles'
 
 const GRID_SIZE = 40
 const CELL_SIZE = 15
@@ -14,6 +14,12 @@ const KEY_MAP = {
   ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
   w: 'UP', s: 'DOWN', a: 'LEFT', d: 'RIGHT',
   W: 'UP', S: 'DOWN', A: 'LEFT', D: 'RIGHT',
+}
+
+const POWERUP_META = {
+  speed: { emoji: '⚡', color: SUN },
+  shield: { emoji: '🛡️', color: SKY },
+  magnet: { emoji: '🧲', color: BUBBLEGUM },
 }
 
 // TEMPORARY: mock data generator for testing rendering without backend
@@ -35,10 +41,26 @@ function generateMockGameState(tick) {
 
   return {
     players: {
-      player1: { username: 'Alice', snake: makeSnake(angle1), alive: true, skin: SKINS[0].id },
-      player2: { username: 'Bob', snake: makeSnake(angle2), alive: true, skin: SKINS[1].id },
+      player1: {
+        username: 'Alice',
+        snake: makeSnake(angle1),
+        alive: true,
+        skin: SKINS[0].id,
+        effects: { speed: true, shield: false, magnet: false },
+      },
+      player2: {
+        username: 'Bob',
+        snake: makeSnake(angle2),
+        alive: true,
+        skin: SKINS[1].id,
+        effects: { speed: false, shield: true, magnet: false },
+      },
     },
     food: { x: 20, y: 15 },
+    powerUps: [
+      { id: 1, type: 'magnet', x: 12, y: 8 },
+      { id: 2, type: 'speed', x: 30, y: 28 },
+    ],
     dangerRing: Math.max(5, 20 - Math.floor(tick / 40)), // shrinks over time
   }
 }
@@ -190,6 +212,24 @@ export default function Game() {
       ctx.shadowBlur = 0
     }
 
+    // Power-ups - colored glowing circle with an emoji marker
+    ;(gameState.powerUps || []).forEach((p) => {
+      const meta = POWERUP_META[p.type] || { emoji: '✨', color: '#ffffff' }
+      const cx = p.x * CELL_SIZE + CELL_SIZE / 2
+      const cy = p.y * CELL_SIZE + CELL_SIZE / 2
+      ctx.beginPath()
+      ctx.arc(cx, cy, CELL_SIZE / 2.1, 0, Math.PI * 2)
+      ctx.fillStyle = meta.color
+      ctx.shadowColor = meta.color
+      ctx.shadowBlur = 10
+      ctx.fill()
+      ctx.shadowBlur = 0
+      ctx.font = `${CELL_SIZE - 2}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(meta.emoji, cx, cy + 1)
+    })
+
     // Snakes - cute rounded segments with a face on the head, colored per skin
     const playerEntries = Object.entries(gameState.players || {})
     playerEntries.forEach(([id, player]) => {
@@ -250,6 +290,27 @@ export default function Game() {
         ctx.fillStyle = '#111827'
         ctx.fill()
       })
+
+      // Shield: pulsing ring around the head
+      if (player.effects?.shield) {
+        const t = Date.now() / 300
+        const pulse = 2 + Math.sin(t) * 1.5
+        ctx.beginPath()
+        ctx.arc(hx, hy, CELL_SIZE / 1.6 + pulse, 0, Math.PI * 2)
+        ctx.strokeStyle = SKY
+        ctx.lineWidth = 2
+        ctx.stroke()
+      }
+
+      // Speed boost: short motion-line trail behind the head
+      if (player.effects?.speed) {
+        ctx.strokeStyle = SUN
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(hx - facing.x * CELL_SIZE * 1.2, hy - facing.y * CELL_SIZE * 1.2)
+        ctx.lineTo(hx - facing.x * CELL_SIZE * 0.6, hy - facing.y * CELL_SIZE * 0.6)
+        ctx.stroke()
+      }
     })
   }, [gameState])
 
@@ -425,6 +486,9 @@ export default function Game() {
                 style={{ backgroundColor: getSkinById(p.skin).head }}
               />
               <span className="text-white">{p.username}</span>
+              {p.effects?.speed && <span title="Speed Boost">⚡</span>}
+              {p.effects?.shield && <span title="Shield">🛡️</span>}
+              {p.effects?.magnet && <span title="Magnet">🧲</span>}
               {!p.alive && <span className="text-red-400 text-xs">(out)</span>}
             </li>
           ))}
