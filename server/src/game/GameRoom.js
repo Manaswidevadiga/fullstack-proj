@@ -1,5 +1,14 @@
 const pool = require('../config/db');
-const { GRID_SIZE, TICK_RATE_MS, SHRINK_INTERVAL_MS } = require('./constants');
+const {
+  GRID_SIZE,
+  TICK_RATE_MS,
+  SHRINK_INTERVAL_MS,
+  POWERUP_TYPES,
+  MAX_POWERUPS_ON_BOARD,
+  SPEED_BOOST_DURATION_MS,
+  MAGNET_DURATION_MS,
+  MAGNET_RADIUS
+} = require('./constants');
 const VALID_SKINS = ['classic', 'ocean', 'sunset', 'bubblegum', 'grape', 'gold'];
 const DEFAULT_SKIN = 'classic';
 
@@ -9,6 +18,8 @@ class GameRoom {
     this.io = io;
     this.players = {};
     this.food = { x: 10, y: 10 };
+    this.powerUps = [];
+    this.powerUpIdCounter = 0;
     this.dangerRing = 0;
     this.tickInterval = null;
     this.shrinkInterval = null;
@@ -29,7 +40,10 @@ class GameRoom {
       snake: [{ x: spawn.x, y: spawn.y }],
       direction: spawn.direction,
       pendingDirection: spawn.direction,
-      alive: true
+      alive: true,
+      speedBoostUntil: 0,
+      shielded: false,
+      magnetUntil: 0
     };
     this.food = this.randomFreeCell();
   }
@@ -65,12 +79,54 @@ class GameRoom {
     do {
       cell = { x: Math.floor(Math.random() * GRID_SIZE), y: Math.floor(Math.random() * GRID_SIZE) };
       attempts++;
-    } while ((this.isCellOccupied(cell) || this.isInDangerZone(cell)) && attempts < 1000);
+    } while (
+      (this.isCellOccupied(cell) || this.isInDangerZone(cell) || this.isPowerUpCell(cell)) &&
+      attempts < 1000
+    );
     return cell;
+  }
+
+  randomFreePowerUpCell() {
+    let cell;
+    let attempts = 0;
+    do {
+      cell = { x: Math.floor(Math.random() * GRID_SIZE), y: Math.floor(Math.random() * GRID_SIZE) };
+      attempts++;
+    } while (
+      attempts < 1000 &&
+      (this.isCellOccupied(cell) ||
+        this.isInDangerZone(cell) ||
+        this.isPowerUpCell(cell) ||
+        (this.food.x === cell.x && this.food.y === cell.y))
+    );
+    return attempts < 1000 ? cell : null;
   }
 
   isCellOccupied(cell) {
     return Object.values(this.players).some((p) => p.snake.some((seg) => seg.x === cell.x && seg.y === cell.y));
+  }
+
+  isPowerUpCell(cell) {
+    return this.powerUps.some((p) => p.x === cell.x && p.y === cell.y);
+  }
+
+  spawnPowerUp() {
+    if (this.powerUps.length >= MAX_POWERUPS_ON_BOARD) return;
+    const cell = this.randomFreePowerUpCell();
+    if (!cell) return;
+    const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+    this.powerUpIdCounter += 1;
+    this.powerUps.push({ id: this.powerUpIdCounter, type, x: cell.x, y: cell.y });
+  }
+
+  applyPowerUp(player, type, now) {
+    if (type === 'speed') {
+      player.speedBoostUntil = now + SPEED_BOOST_DURATION_MS;
+    } else if (type === 'shield') {
+      player.shielded = true;
+    } else if (type === 'magnet') {
+      player.magnetUntil = now + MAGNET_DURATION_MS;
+    }
   }
 
   setDirection(socketId, dir) {
@@ -101,8 +157,12 @@ class GameRoom {
       p.direction = spawn.direction;
       p.pendingDirection = spawn.direction;
       p.alive = true;
+      p.speedBoostUntil = 0;
+      p.shielded = false;
+      p.magnetUntil = 0;
     });
     this.dangerRing = 0;
+    this.powerUps = [];
     this.food = this.randomFreeCell();
     this.started = false;
     this.rematchReady.clear();
@@ -113,6 +173,8 @@ class GameRoom {
     if (this.isInDangerZone(this.food)) {
       this.food = this.randomFreeCell();
     }
+    this.powerUps = this.powerUps.filter((p) => !this.isInDangerZone(p));
+    this.spawnPowerUp(); // a power-up appears each time the zone shrinks, up to the cap
     this.io.to(this.roomCode).emit('arenaShrink', { dangerRing: this.dangerRing });
   }
 
@@ -126,38 +188,76 @@ class GameRoom {
   }
 
   tick() {
+    const now = Date.now();
+
     for (const player of Object.values(this.players)) {
       if (!player.alive) continue;
       player.direction = player.pendingDirection;
-      const head = player.snake[0];
-      const newHead = { x: head.x + player.direction.x, y: head.y + player.direction.y };
-      player.snake.unshift(newHead);
 
-      if (newHead.x === this.food.x && newHead.y === this.food.y) {
-        this.food = this.randomFreeCell();
-      } else {
-        player.snake.pop();
+      // Speed boost: move 2 cells this tick instead of 1. Each step is
+      // checked for wall/danger-zone/self collision as it happens, so a
+      // boosted snake can't skip past a lethal edge unfairly.
+      const steps = player.speedBoostUntil > now ? 2 : 1;
+
+      for (let step = 0; step < steps; step++) {
+        if (!player.alive) break;
+
+        const head = player.snake[0];
+        const newHead = { x: head.x + player.direction.x, y: head.y + player.direction.y };
+        player.snake.unshift(newHead);
+
+        let grew = false;
+
+        if (newHead.x === this.food.x && newHead.y === this.food.y) {
+          this.food = this.randomFreeCell();
+          grew = true;
+        } else if (player.magnetUntil > now) {
+          const dist = Math.abs(newHead.x - this.food.x) + Math.abs(newHead.y - this.food.y);
+          if (dist <= MAGNET_RADIUS) {
+            this.food = this.randomFreeCell();
+            grew = true;
+          }
+        }
+
+        const hitIndex = this.powerUps.findIndex((p) => p.x === newHead.x && p.y === newHead.y);
+        if (hitIndex !== -1) {
+          this.applyPowerUp(player, this.powerUps[hitIndex].type, now);
+          this.powerUps.splice(hitIndex, 1);
+        }
+
+        if (!grew) {
+          player.snake.pop();
+        }
+
+        const stepHead = player.snake[0];
+        const outOfBounds =
+          stepHead.x < 0 || stepHead.y < 0 || stepHead.x >= GRID_SIZE || stepHead.y >= GRID_SIZE;
+        const inDanger = this.isInDangerZone(stepHead);
+        const hitSelf = player.snake.slice(1).some((seg) => seg.x === stepHead.x && seg.y === stepHead.y);
+
+        if (outOfBounds || inDanger || hitSelf) {
+          if (player.shielded) {
+            player.shielded = false; // shield absorbs exactly one lethal hit
+          } else {
+            player.alive = false;
+          }
+        }
       }
     }
 
+    // Cross-player collisions checked once per tick using final positions
     for (const [id, player] of Object.entries(this.players)) {
       if (!player.alive) continue;
       const head = player.snake[0];
 
-      if (head.x < 0 || head.y < 0 || head.x >= GRID_SIZE || head.y >= GRID_SIZE || this.isInDangerZone(head)) {
-        player.alive = false;
-        continue;
-      }
-
-      if (player.snake.slice(1).some((seg) => seg.x === head.x && seg.y === head.y)) {
-        player.alive = false;
-        continue;
-      }
-
       for (const [otherId, other] of Object.entries(this.players)) {
         if (otherId === id || !other.alive) continue;
         if (other.snake.some((seg) => seg.x === head.x && seg.y === head.y)) {
-          player.alive = false;
+          if (player.shielded) {
+            player.shielded = false;
+          } else {
+            player.alive = false;
+          }
         }
       }
     }
@@ -174,14 +274,26 @@ class GameRoom {
   }
 
   getState() {
+    const now = Date.now();
     return {
       players: Object.fromEntries(
         Object.entries(this.players).map(([id, p]) => [
           id,
-          { username: p.username, snake: p.snake, alive: p.alive, skin: p.skin }
+          {
+            username: p.username,
+            snake: p.snake,
+            alive: p.alive,
+            skin: p.skin,
+            effects: {
+              speed: p.speedBoostUntil > now,
+              shield: p.shielded,
+              magnet: p.magnetUntil > now
+            }
+          }
         ])
       ),
       food: this.food,
+      powerUps: this.powerUps,
       dangerRing: this.dangerRing,
       hostId: this.hostId
     };

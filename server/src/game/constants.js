@@ -8,5 +8,10 @@ module.exports = {
     DOWN: { x: 0, y: 1 },
     LEFT: { x: -1, y: 0 },
     RIGHT: { x: 1, y: 0 }
-  }
+  },
+  POWERUP_TYPES: ['speed', 'shield', 'magnet'],
+  MAX_POWERUPS_ON_BOARD: 2,
+  SPEED_BOOST_DURATION_MS: 4000,
+  MAGNET_DURATION_MS: 5000,
+  MAGNET_RADIUS: 3
 };
