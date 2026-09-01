@@ -3,8 +3,20 @@ import { DEFAULT_SKIN_ID } from '../lib/skins'
 
 const AuthContext = createContext(null)
 
+const GUEST_ADJECTIVES = [
+  'Wiggly', 'Sneaky', 'Zoomy', 'Slippery', 'Noodly',
+  'Zippy', 'Curly', 'Sizzling', 'Bouncy', 'Spicy', 'Giggly', 'Sly',
+]
+const GUEST_NOUNS = [
+  'Noodle', 'Zigzag', 'Slider', 'Viper', 'Wiggler',
+  'Rattler', 'Squiggle', 'Cobra', 'Mamba', 'Sidewinder',
+]
+
 function generateGuestName() {
-  return `Guest${Math.floor(1000 + Math.random() * 9000)}`
+  const adjective = GUEST_ADJECTIVES[Math.floor(Math.random() * GUEST_ADJECTIVES.length)]
+  const noun = GUEST_NOUNS[Math.floor(Math.random() * GUEST_NOUNS.length)]
+  const number = Math.floor(10 + Math.random() * 90)
+  return `${adjective}${noun}${number}`
 }
 
 export function AuthProvider({ children }) {
@@ -35,6 +47,8 @@ export function AuthProvider({ children }) {
   }
 
   const continueAsGuest = () => {
+    // Guests get a session-only identity: no token, nothing written to
+    // localStorage, so it doesn't persist or get mistaken for a real account.
     const guestUser = { username: generateGuestName(), isGuest: true }
     setUser(guestUser)
     setToken(null)

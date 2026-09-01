@@ -122,8 +122,24 @@ export default function Lobby() {
 
   if (connecting) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={bgStyle}>
-        <p style={{ fontFamily: "'Kalam', cursive", color: INK }}>connecting to server...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-4" style={bgStyle}>
+        <div className="flex gap-2">
+          {[0, 1, 2].map((i) => (
+            <motion.span
+              key={i}
+              className="w-3 h-3 rounded-full"
+              style={{ background: SUN, border: `2px solid ${INK}` }}
+              animate={{ y: [0, -8, 0] }}
+              transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
+            />
+          ))}
+        </div>
+        <p style={{ fontFamily: "'Kalam', cursive", color: INK, fontWeight: 700 }}>
+          waking up the server…
+        </p>
+        <p className="text-xs text-center max-w-xs" style={{ fontFamily: "'Kalam', cursive", color: '#8A8372' }}>
+          can take up to 30s if it's been sitting idle — thanks for your patience! 😴
+        </p>
       </div>
     )
   }

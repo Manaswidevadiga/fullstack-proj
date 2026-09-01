@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence, useAnimation } from 'framer-motion'
 import { socket } from '../lib/socket'
 import { SKINS, getSkinById } from '../lib/skins'
 import { INK, PAPER, CORAL, SUN, SKY, GRASS, BUBBLEGUM } from '../lib/theme'
@@ -9,6 +9,10 @@ import { Star, Zigzag, SnakeDoodle, BG_BLOBS } from '../components/doodles'
 const GRID_SIZE = 40
 const CELL_SIZE = 15
 const CANVAS_SIZE = GRID_SIZE * CELL_SIZE
+
+// Must match the server's TICK_RATE_MS (server/src/game/constants.js) — used
+// only to time client-side position interpolation between state updates.
+const SERVER_TICK_MS = 230
 
 const KEY_MAP = {
   ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
@@ -66,8 +70,7 @@ function generateMockGameState(tick) {
 }
 
 // Deterministic pseudo-random, seeded — same seed always gives the same
-// jitter, so the hand-drawn ring stays stable between renders instead of
-// visibly vibrating at the tick rate.
+// jitter, so the hand-drawn danger ring stays stable between renders.
 function seededRandom(seed) {
   const x = Math.sin(seed) * 10000
   return x - Math.floor(x)
@@ -79,9 +82,6 @@ function jitterPoint(px, py, seed, amount = 3) {
   return [px + rx, py + ry]
 }
 
-// Hand-drawn rectangle: draws the danger-zone boundary as a wobbly sketched
-// outline (two overlapping jittered passes) instead of a perfectly straight
-// rect, to match the sticker/doodle visual style.
 function drawRoughRect(ctx, x, y, w, h, seed, color) {
   const corners = [
     [x, y],
@@ -107,6 +107,23 @@ function drawRoughRect(ctx, x, y, w, h, seed, color) {
   ctx.globalAlpha = 1
 }
 
+function lerp(a, b, t) {
+  return a + (b - a) * t
+}
+
+// Interpolates each snake segment between its previous position and its
+// current one. Segment i's "previous" position is prevSnake[i-1] (the
+// segment ahead of it last tick — since a body segment always moves to
+// where the segment in front of it used to be), falling back gracefully
+// for the head or for newly-added segments.
+function getInterpolatedSnake(prevSnake, currSnake, t) {
+  if (!prevSnake || prevSnake.length === 0) return currSnake
+  return currSnake.map((seg, i) => {
+    const from = prevSnake[i - 1] || prevSnake[i] || seg
+    return { x: lerp(from.x, seg.x, t), y: lerp(from.y, seg.y, t) }
+  })
+}
+
 export default function Game() {
   const canvasRef = useRef(null)
   const navigate = useNavigate()
@@ -114,6 +131,18 @@ export default function Game() {
   const [winner, setWinner] = useState(undefined)
   const [rematchStatus, setRematchStatus] = useState(null)
   const [iAmReady, setIAmReady] = useState(false)
+  const [showWarning, setShowWarning] = useState(false)
+
+  const shakeControls = useAnimation()
+  const stateRef = useRef({ prev: null, curr: null, lastUpdateTime: 0 })
+  const rafRef = useRef(null)
+
+  const pushState = (state) => {
+    stateRef.current.prev = stateRef.current.curr
+    stateRef.current.curr = state
+    stateRef.current.lastUpdateTime = performance.now()
+    setGameState(state)
+  }
 
   useEffect(() => {
     const useMock = new URLSearchParams(window.location.search).get('mock') === 'true'
@@ -122,25 +151,41 @@ export default function Game() {
       let tick = 0
       const interval = setInterval(() => {
         tick++
-        setGameState(generateMockGameState(tick))
-      }, 125) // ~8 times/sec, matching real server rate
+        pushState(generateMockGameState(tick))
+      }, 125)
       return () => clearInterval(interval)
     }
 
-    socket.on('gameState', (state) => setGameState(state))
+    socket.on('gameState', (state) => pushState(state))
     socket.on('gameOver', (data) => setWinner(data.winner))
     socket.on('rematchStatus', (status) => setRematchStatus(status))
     socket.on('rematchReady', (state) => {
+      // Reset interpolation cleanly on rematch so snakes don't slide
+      // across the board from their old positions.
+      stateRef.current.prev = null
+      stateRef.current.curr = state
+      stateRef.current.lastUpdateTime = performance.now()
       setGameState(state)
       setWinner(undefined)
       setRematchStatus(null)
       setIAmReady(false)
     })
+    socket.on('dangerZoneWarning', () => {
+      shakeControls.start({
+        x: [0, -6, 6, -4, 4, -2, 2, 0],
+        y: [0, 3, -3, 2, -2, 1, -1, 0],
+        transition: { duration: 0.5 },
+      })
+      setShowWarning(true)
+      setTimeout(() => setShowWarning(false), 1500)
+    })
+
     return () => {
       socket.off('gameState')
       socket.off('gameOver')
       socket.off('rematchStatus')
       socket.off('rematchReady')
+      socket.off('dangerZoneWarning')
     }
   }, [])
 
@@ -156,17 +201,31 @@ export default function Game() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  // Continuous render loop — draws every animation frame, interpolating
+  // snake positions between the last two server updates instead of
+  // snapping straight to each new grid cell.
   useEffect(() => {
-    if (!gameState) return
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
+    function renderLoop() {
+      const canvas = canvasRef.current
+      const { prev, curr, lastUpdateTime } = stateRef.current
 
-    // Background
+      if (canvas && curr) {
+        const ctx = canvas.getContext('2d')
+        const t = Math.min(1, (performance.now() - lastUpdateTime) / SERVER_TICK_MS)
+        drawFrame(ctx, curr, prev, t)
+      }
+
+      rafRef.current = requestAnimationFrame(renderLoop)
+    }
+
+    rafRef.current = requestAnimationFrame(renderLoop)
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [])
+
+  function drawFrame(ctx, state, prevState, t) {
     ctx.fillStyle = '#0a0a0a'
     ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
 
-    // Grid lines
     ctx.strokeStyle = '#18181b'
     ctx.lineWidth = 1
     for (let i = 0; i <= GRID_SIZE; i++) {
@@ -180,10 +239,8 @@ export default function Game() {
       ctx.stroke()
     }
 
-    // Danger zone - shrinking safe area (square inset from edges),
-    // drawn as a hand-sketched wobbly outline to match the sticker theme
-    if (typeof gameState.dangerRing === 'number') {
-      const inset = gameState.dangerRing * CELL_SIZE
+    if (typeof state.dangerRing === 'number') {
+      const inset = state.dangerRing * CELL_SIZE
       const safeX = inset
       const safeY = inset
       const safeSize = Math.max(CANVAS_SIZE - inset * 2, 0)
@@ -192,17 +249,16 @@ export default function Game() {
       ctx.beginPath()
       ctx.rect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
       ctx.rect(safeX, safeY, safeSize, safeSize)
-      ctx.fillStyle = 'rgba(255, 107, 74, 0.14)' // coral tint instead of pure red
+      ctx.fillStyle = 'rgba(255, 107, 74, 0.14)'
       ctx.fill('evenodd')
       ctx.restore()
 
-      drawRoughRect(ctx, safeX, safeY, safeSize, safeSize, gameState.dangerRing, CORAL)
+      drawRoughRect(ctx, safeX, safeY, safeSize, safeSize, state.dangerRing, CORAL)
     }
 
-    // Food - glowing red circle
-    if (gameState.food) {
-      const fx = gameState.food.x * CELL_SIZE + CELL_SIZE / 2
-      const fy = gameState.food.y * CELL_SIZE + CELL_SIZE / 2
+    if (state.food) {
+      const fx = state.food.x * CELL_SIZE + CELL_SIZE / 2
+      const fy = state.food.y * CELL_SIZE + CELL_SIZE / 2
       ctx.beginPath()
       ctx.arc(fx, fy, CELL_SIZE / 2.5, 0, Math.PI * 2)
       ctx.fillStyle = '#ef4444'
@@ -212,8 +268,7 @@ export default function Game() {
       ctx.shadowBlur = 0
     }
 
-    // Power-ups - colored glowing circle with an emoji marker
-    ;(gameState.powerUps || []).forEach((p) => {
+    ;(state.powerUps || []).forEach((p) => {
       const meta = POWERUP_META[p.type] || { emoji: '✨', color: '#ffffff' }
       const cx = p.x * CELL_SIZE + CELL_SIZE / 2
       const cy = p.y * CELL_SIZE + CELL_SIZE / 2
@@ -230,13 +285,14 @@ export default function Game() {
       ctx.fillText(meta.emoji, cx, cy + 1)
     })
 
-    // Snakes - cute rounded segments with a face on the head, colored per skin
-    const playerEntries = Object.entries(gameState.players || {})
+    const playerEntries = Object.entries(state.players || {})
     playerEntries.forEach(([id, player]) => {
       if (!player.alive || !player.snake?.length) return
       const skinData = getSkinById(player.skin)
+      const prevSnake = prevState?.players?.[id]?.snake
+      const renderSnake = getInterpolatedSnake(prevSnake, player.snake, t)
 
-      player.snake.forEach((seg, segIdx) => {
+      renderSnake.forEach((seg, segIdx) => {
         const x = seg.x * CELL_SIZE
         const y = seg.y * CELL_SIZE
         const isHead = segIdx === 0
@@ -246,24 +302,22 @@ export default function Game() {
         ctx.shadowColor = color
         ctx.shadowBlur = isHead ? 8 : 3
         ctx.beginPath()
-        ctx.roundRect(
-          x + 1,
-          y + 1,
-          CELL_SIZE - 2,
-          CELL_SIZE - 2,
-          isHead ? CELL_SIZE / 2 : 3
-        )
+        ctx.roundRect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2, isHead ? CELL_SIZE / 2 : 3)
         ctx.fill()
         ctx.shadowBlur = 0
       })
 
+      // Facing direction stays based on the discrete (non-interpolated)
+      // head/neck cells — direction is quantized to 4 ways, no point
+      // smoothing it, only the pixel position needs to glide.
       const head = player.snake[0]
       const neck = player.snake[1] || head
       let facing = { x: head.x - neck.x, y: head.y - neck.y }
       if (facing.x === 0 && facing.y === 0) facing = { x: 1, y: 0 }
 
-      const hx = head.x * CELL_SIZE + CELL_SIZE / 2
-      const hy = head.y * CELL_SIZE + CELL_SIZE / 2
+      const renderHead = renderSnake[0]
+      const hx = renderHead.x * CELL_SIZE + CELL_SIZE / 2
+      const hy = renderHead.y * CELL_SIZE + CELL_SIZE / 2
       const perp = { x: -facing.y, y: facing.x }
       const eyeSpacing = CELL_SIZE / 4
       const eyeForward = CELL_SIZE / 6
@@ -280,21 +334,14 @@ export default function Game() {
         ctx.fill()
 
         ctx.beginPath()
-        ctx.arc(
-          eye.x + facing.x * 1.2,
-          eye.y + facing.y * 1.2,
-          CELL_SIZE / 14,
-          0,
-          Math.PI * 2
-        )
+        ctx.arc(eye.x + facing.x * 1.2, eye.y + facing.y * 1.2, CELL_SIZE / 14, 0, Math.PI * 2)
         ctx.fillStyle = '#111827'
         ctx.fill()
       })
 
-      // Shield: pulsing ring around the head
       if (player.effects?.shield) {
-        const t = Date.now() / 300
-        const pulse = 2 + Math.sin(t) * 1.5
+        const pulseT = Date.now() / 300
+        const pulse = 2 + Math.sin(pulseT) * 1.5
         ctx.beginPath()
         ctx.arc(hx, hy, CELL_SIZE / 1.6 + pulse, 0, Math.PI * 2)
         ctx.strokeStyle = SKY
@@ -302,7 +349,6 @@ export default function Game() {
         ctx.stroke()
       }
 
-      // Speed boost: short motion-line trail behind the head
       if (player.effects?.speed) {
         ctx.strokeStyle = SUN
         ctx.lineWidth = 2
@@ -312,7 +358,7 @@ export default function Game() {
         ctx.stroke()
       }
     })
-  }, [gameState])
+  }
 
   if (winner !== undefined) {
     return (
@@ -425,12 +471,35 @@ export default function Game() {
 
   return (
     <div className="min-h-screen bg-black flex flex-col lg:flex-row items-center justify-center gap-6 p-4">
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_SIZE}
-        height={CANVAS_SIZE}
-        className="border border-zinc-800 rounded-lg"
-      />
+      <motion.div className="relative" animate={shakeControls}>
+        <canvas
+          ref={canvasRef}
+          width={CANVAS_SIZE}
+          height={CANVAS_SIZE}
+          className="border border-zinc-800 rounded-lg"
+        />
+        <AnimatePresence>
+          {showWarning && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.7, y: -10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.7 }}
+              className="absolute top-3 left-1/2 -translate-x-1/2 px-4 py-2 rounded-2xl pointer-events-none"
+              style={{
+                fontFamily: "'Bangers', cursive",
+                letterSpacing: '0.02em',
+                color: '#fff',
+                background: CORAL,
+                border: `3px solid ${INK}`,
+                boxShadow: `4px 4px 0 ${INK}`,
+              }}
+            >
+              ⚠️ ZONE SHRINKING!
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
       {/* Mobile touch controls */}
       <div className="lg:hidden grid grid-cols-3 gap-2 w-40 mx-auto mt-4">
         <div />
