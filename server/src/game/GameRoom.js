@@ -7,7 +7,8 @@ const {
   MAX_POWERUPS_ON_BOARD,
   SPEED_BOOST_DURATION_MS,
   MAGNET_DURATION_MS,
-  MAGNET_RADIUS
+  MAGNET_RADIUS,
+  DANGER_WARNING_LEAD_MS
 } = require('./constants');
 const VALID_SKINS = ['classic', 'ocean', 'sunset', 'bubblegum', 'grape', 'gold'];
 const DEFAULT_SKIN = 'classic';
@@ -23,6 +24,8 @@ class GameRoom {
     this.dangerRing = 0;
     this.tickInterval = null;
     this.shrinkInterval = null;
+    this.warningTimeout = null;
+    this.warningInterval = null;
     this.started = false;
     this.rematchReady = new Set();
     this.hostId = null;
@@ -141,11 +144,25 @@ class GameRoom {
     this.started = true;
     this.tickInterval = setInterval(() => this.tick(), TICK_RATE_MS);
     this.shrinkInterval = setInterval(() => this.shrinkArena(), SHRINK_INTERVAL_MS);
+
+    // Broadcast a warning shortly before each shrink so the client can
+    // shake the board / flash a banner ahead of time, not just after.
+    const leadTime = Math.max(SHRINK_INTERVAL_MS - DANGER_WARNING_LEAD_MS, 0);
+    this.warningTimeout = setTimeout(() => {
+      this.emitShrinkWarning();
+      this.warningInterval = setInterval(() => this.emitShrinkWarning(), SHRINK_INTERVAL_MS);
+    }, leadTime);
   }
 
   stop() {
     clearInterval(this.tickInterval);
     clearInterval(this.shrinkInterval);
+    clearTimeout(this.warningTimeout);
+    clearInterval(this.warningInterval);
+  }
+
+  emitShrinkWarning() {
+    this.io.to(this.roomCode).emit('dangerZoneWarning', {});
   }
 
   resetForRematch() {
@@ -194,9 +211,6 @@ class GameRoom {
       if (!player.alive) continue;
       player.direction = player.pendingDirection;
 
-      // Speed boost: move 2 cells this tick instead of 1. Each step is
-      // checked for wall/danger-zone/self collision as it happens, so a
-      // boosted snake can't skip past a lethal edge unfairly.
       const steps = player.speedBoostUntil > now ? 2 : 1;
 
       for (let step = 0; step < steps; step++) {
@@ -237,7 +251,7 @@ class GameRoom {
 
         if (outOfBounds || inDanger || hitSelf) {
           if (player.shielded) {
-            player.shielded = false; // shield absorbs exactly one lethal hit
+            player.shielded = false;
           } else {
             player.alive = false;
           }
@@ -245,7 +259,6 @@ class GameRoom {
       }
     }
 
-    // Cross-player collisions checked once per tick using final positions
     for (const [id, player] of Object.entries(this.players)) {
       if (!player.alive) continue;
       const head = player.snake[0];
