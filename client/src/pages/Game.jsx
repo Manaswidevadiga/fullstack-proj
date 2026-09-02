@@ -111,15 +111,16 @@ function lerp(a, b, t) {
   return a + (b - a) * t
 }
 
-// Interpolates each snake segment between its previous position and its
-// current one. Segment i's "previous" position is prevSnake[i-1] (the
-// segment ahead of it last tick — since a body segment always moves to
-// where the segment in front of it used to be), falling back gracefully
-// for the head or for newly-added segments.
+// Interpolates each snake segment between ITS OWN previous position and its
+// current one (same index in both arrays). Each segment simply glides one
+// cell forward along the snake's path every tick — the same amount the head
+// moves. Falls back to a zero-distance "no movement" for segments that
+// didn't exist last tick (e.g. a segment added by growth or a multi-step
+// speed-boost move), which snap in place rather than glide from nowhere.
 function getInterpolatedSnake(prevSnake, currSnake, t) {
   if (!prevSnake || prevSnake.length === 0) return currSnake
   return currSnake.map((seg, i) => {
-    const from = prevSnake[i - 1] || prevSnake[i] || seg
+    const from = prevSnake[i] || seg
     return { x: lerp(from.x, seg.x, t), y: lerp(from.y, seg.y, t) }
   })
 }
@@ -160,8 +161,6 @@ export default function Game() {
     socket.on('gameOver', (data) => setWinner(data.winner))
     socket.on('rematchStatus', (status) => setRematchStatus(status))
     socket.on('rematchReady', (state) => {
-      // Reset interpolation cleanly on rematch so snakes don't slide
-      // across the board from their old positions.
       stateRef.current.prev = null
       stateRef.current.curr = state
       stateRef.current.lastUpdateTime = performance.now()
@@ -201,9 +200,6 @@ export default function Game() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // Continuous render loop — draws every animation frame, interpolating
-  // snake positions between the last two server updates instead of
-  // snapping straight to each new grid cell.
   useEffect(() => {
     function renderLoop() {
       const canvas = canvasRef.current
@@ -307,9 +303,6 @@ export default function Game() {
         ctx.shadowBlur = 0
       })
 
-      // Facing direction stays based on the discrete (non-interpolated)
-      // head/neck cells — direction is quantized to 4 ways, no point
-      // smoothing it, only the pixel position needs to glide.
       const head = player.snake[0]
       const neck = player.snake[1] || head
       let facing = { x: head.x - neck.x, y: head.y - neck.y }
