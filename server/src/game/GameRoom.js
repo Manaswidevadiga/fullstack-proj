@@ -10,6 +10,7 @@ const {
   MAGNET_RADIUS,
   DANGER_WARNING_LEAD_MS
 } = require('./constants');
+const { getArenaById, DEFAULT_ARENA_ID, HAZARD_BLINK_MS } = require('./arenas');
 const VALID_SKINS = ['classic', 'ocean', 'sunset', 'bubblegum', 'grape', 'gold'];
 const DEFAULT_SKIN = 'classic';
 
@@ -29,6 +30,7 @@ class GameRoom {
     this.started = false;
     this.rematchReady = new Set();
     this.hostId = null;
+    this.arena = getArenaById(DEFAULT_ARENA_ID);
   }
 
   addPlayer(socketId, username, isGuest = false, skin = DEFAULT_SKIN) {
@@ -64,6 +66,21 @@ class GameRoom {
     return this.hostId === socketId;
   }
 
+  setArena(arenaId) {
+    if (this.started) return false; // arena is locked once the round begins
+    this.arena = getArenaById(arenaId); // getArenaById falls back to default on a bad id
+    return true;
+  }
+
+  isObstacleCell(cell) {
+    return this.arena.obstacles.some((o) => o.x === cell.x && o.y === cell.y);
+  }
+
+  isActiveHazard(cell, now) {
+    if (!this.arena.hazards.some((h) => h.x === cell.x && h.y === cell.y)) return false;
+    return Math.floor(now / HAZARD_BLINK_MS) % 2 === 0;
+  }
+
   getSpawnPoint(index) {
     const spawns = [
       { x: 2, y: 2, direction: { x: 1, y: 0 } },
@@ -83,7 +100,7 @@ class GameRoom {
       cell = { x: Math.floor(Math.random() * GRID_SIZE), y: Math.floor(Math.random() * GRID_SIZE) };
       attempts++;
     } while (
-      (this.isCellOccupied(cell) || this.isInDangerZone(cell) || this.isPowerUpCell(cell)) &&
+      (this.isCellOccupied(cell) || this.isInDangerZone(cell) || this.isPowerUpCell(cell) || this.isObstacleCell(cell)) &&
       attempts < 1000
     );
     return cell;
@@ -100,6 +117,7 @@ class GameRoom {
       (this.isCellOccupied(cell) ||
         this.isInDangerZone(cell) ||
         this.isPowerUpCell(cell) ||
+        this.isObstacleCell(cell) ||
         (this.food.x === cell.x && this.food.y === cell.y))
     );
     return attempts < 1000 ? cell : null;
@@ -183,6 +201,8 @@ class GameRoom {
     this.food = this.randomFreeCell();
     this.started = false;
     this.rematchReady.clear();
+    // arena is intentionally left as-is, so it persists across a rematch
+    // unless the host explicitly picks a new one via setArena()
   }
 
   shrinkArena() {
@@ -247,9 +267,11 @@ class GameRoom {
         const outOfBounds =
           stepHead.x < 0 || stepHead.y < 0 || stepHead.x >= GRID_SIZE || stepHead.y >= GRID_SIZE;
         const inDanger = this.isInDangerZone(stepHead);
+        const hitObstacle = this.isObstacleCell(stepHead);
+        const hitActiveHazard = this.isActiveHazard(stepHead, now);
         const hitSelf = player.snake.slice(1).some((seg) => seg.x === stepHead.x && seg.y === stepHead.y);
 
-        if (outOfBounds || inDanger || hitSelf) {
+        if (outOfBounds || inDanger || hitObstacle || hitActiveHazard || hitSelf) {
           if (player.shielded) {
             player.shielded = false;
           } else {
@@ -275,7 +297,7 @@ class GameRoom {
       }
     }
 
-    this.io.to(this.roomCode).emit('gameState', this.getState());
+    this.io.to(this.roomCode).emit('gameState', this.getState(now));
 
     const aliveCount = Object.values(this.players).filter((p) => p.alive).length;
     if (aliveCount <= 1 && Object.keys(this.players).length > 1) {
@@ -286,8 +308,7 @@ class GameRoom {
     }
   }
 
-  getState() {
-    const now = Date.now();
+  getState(now = Date.now()) {
     return {
       players: Object.fromEntries(
         Object.entries(this.players).map(([id, p]) => [
@@ -308,7 +329,18 @@ class GameRoom {
       food: this.food,
       powerUps: this.powerUps,
       dangerRing: this.dangerRing,
-      hostId: this.hostId
+      hostId: this.hostId,
+      arena: {
+        id: this.arena.id,
+        name: this.arena.name,
+        theme: this.arena.theme,
+        obstacles: this.arena.obstacles,
+        hazards: this.arena.hazards.map((h) => ({
+          x: h.x,
+          y: h.y,
+          active: this.isActiveHazard(h, now)
+        }))
+      }
     };
   }
 

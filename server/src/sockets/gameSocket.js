@@ -73,6 +73,21 @@ module.exports = function (io) {
       if (!room.started) room.start();
     });
 
+    socket.on('selectArena', (arenaId) => {
+      const room = rooms[socket.data.roomCode];
+      if (!room) return;
+      if (!room.isHost(socket.id)) {
+        socket.emit('selectArenaError', { error: 'Only the room host can change the arena' });
+        return;
+      }
+      const applied = room.setArena(arenaId);
+      if (!applied) {
+        socket.emit('selectArenaError', { error: 'Arena cannot be changed once the game has started' });
+        return;
+      }
+      io.to(socket.data.roomCode).emit('lobbyUpdate', room.getState());
+    });
+
     socket.on('playAgain', () => {
       const room = rooms[socket.data.roomCode];
       if (!room) return;
