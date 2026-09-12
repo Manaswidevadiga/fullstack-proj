@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useAnimation } from 'framer-motion'
 import { socket } from '../lib/socket'
 import { SKINS, getSkinById } from '../lib/skins'
+import { getArenaById } from '../lib/Arenas'
 import { INK, PAPER, CORAL, SUN, SKY, GRASS, BUBBLEGUM } from '../lib/theme'
 import { Star, Zigzag, SnakeDoodle, BG_BLOBS } from '../components/doodles'
 
@@ -25,6 +26,10 @@ const POWERUP_META = {
   shield: { emoji: '🛡️', color: SKY },
   magnet: { emoji: '🧲', color: BUBBLEGUM },
 }
+
+// Rock obstacles use a fixed stone color regardless of arena theme accent —
+// only Rocky Canyon has obstacles, so this never needs to vary.
+const ROCK_FILL = '#8B7355'
 
 // TEMPORARY: mock data generator for testing rendering without backend
 function generateMockGameState(tick) {
@@ -66,6 +71,7 @@ function generateMockGameState(tick) {
       { id: 2, type: 'speed', x: 30, y: 28 },
     ],
     dangerRing: Math.max(5, 20 - Math.floor(tick / 40)), // shrinks over time
+    arena: { id: 'meadow', name: 'Meadow', theme: 'green', obstacles: [], hazards: [] },
   }
 }
 
@@ -105,6 +111,50 @@ function drawRoughRect(ctx, x, y, w, h, seed, color) {
     ctx.stroke()
   }
   ctx.globalAlpha = 1
+}
+
+// Static rock obstacle cell — filled stone color plus a hand-drawn outline,
+// seeded on grid position so the jagged edge stays stable between frames.
+function drawObstacleCell(ctx, gx, gy) {
+  const x = gx * CELL_SIZE
+  const y = gy * CELL_SIZE
+  const seed = gx * 1000 + gy
+
+  ctx.fillStyle = ROCK_FILL
+  ctx.beginPath()
+  ctx.roundRect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2, 3)
+  ctx.fill()
+
+  drawRoughRect(ctx, x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2, seed, INK)
+}
+
+// Blinking ice hazard cell — bright + glowing while active (lethal), dim and
+// flat while inactive (safe, still walkable/spawnable).
+function drawHazardCell(ctx, gx, gy, active) {
+  const x = gx * CELL_SIZE
+  const y = gy * CELL_SIZE
+  const seed = gx * 1000 + gy
+
+  ctx.save()
+  ctx.fillStyle = active ? SKY : 'rgba(79, 195, 232, 0.22)'
+  ctx.beginPath()
+  ctx.roundRect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2, 4)
+  if (active) {
+    ctx.shadowColor = SKY
+    ctx.shadowBlur = 9
+  }
+  ctx.fill()
+  ctx.restore()
+
+  drawRoughRect(
+    ctx,
+    x + 1,
+    y + 1,
+    CELL_SIZE - 2,
+    CELL_SIZE - 2,
+    seed,
+    active ? '#ffffff' : 'rgba(255, 255, 255, 0.3)'
+  )
 }
 
 function lerp(a, b, t) {
@@ -250,6 +300,15 @@ export default function Game() {
       ctx.restore()
 
       drawRoughRect(ctx, safeX, safeY, safeSize, safeSize, state.dangerRing, CORAL)
+    }
+
+    // Arena obstacles/hazards — drawn after the danger zone but before
+    // food/power-ups/snakes, so those always render on top.
+    if (state.arena?.obstacles?.length) {
+      state.arena.obstacles.forEach((o) => drawObstacleCell(ctx, o.x, o.y))
+    }
+    if (state.arena?.hazards?.length) {
+      state.arena.hazards.forEach((h) => drawHazardCell(ctx, h.x, h.y, h.active))
     }
 
     if (state.food) {
@@ -461,6 +520,7 @@ export default function Game() {
   }
 
   const players = Object.entries(gameState?.players || {})
+  const arenaMeta = getArenaById(gameState?.arena?.id)
 
   return (
     <div className="min-h-screen bg-black flex flex-col lg:flex-row items-center justify-center gap-6 p-4">
@@ -469,8 +529,26 @@ export default function Game() {
           ref={canvasRef}
           width={CANVAS_SIZE}
           height={CANVAS_SIZE}
-          className="border border-zinc-800 rounded-lg"
+          className="rounded-lg"
+          style={{ border: `2px solid ${arenaMeta.theme}` }}
         />
+
+        <div
+          className="absolute top-3 left-3 flex items-center gap-1.5 px-3 py-1 rounded-full pointer-events-none"
+          style={{
+            background: 'rgba(10, 10, 10, 0.7)',
+            border: `1.5px solid ${arenaMeta.theme}`,
+          }}
+        >
+          <span className="text-sm leading-none">{arenaMeta.emoji}</span>
+          <span
+            className="text-xs text-white leading-none"
+            style={{ fontFamily: "'Kalam', cursive", fontWeight: 700 }}
+          >
+            {arenaMeta.name}
+          </span>
+        </div>
+
         <AnimatePresence>
           {showWarning && (
             <motion.div

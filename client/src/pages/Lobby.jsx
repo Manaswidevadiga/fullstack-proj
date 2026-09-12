@@ -5,6 +5,7 @@ import { socket } from '../lib/socket'
 import { useAuth } from '../context/AuthContext'
 import { INK, PAPER, CORAL, SUN, SKY, GRASS } from '../lib/theme'
 import { Star, Zigzag, WobblyRing, BG_BLOBS } from '../components/doodles'
+import { ARENAS, DEFAULT_ARENA_ID } from '../lib/Arenas'
 
 const chipRotations = [-3, 2, -2, 3, -1, 1]
 
@@ -17,6 +18,7 @@ export default function Lobby() {
   const [inRoom, setInRoom] = useState(false)
   const [players, setPlayers] = useState({})
   const [hostId, setHostId] = useState(null)
+  const [arenaId, setArenaId] = useState(DEFAULT_ARENA_ID)
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(!socket.connected)
   const [findingMatch, setFindingMatch] = useState(false)
@@ -34,6 +36,7 @@ export default function Lobby() {
       console.log('lobbyUpdate:', roomState)
       setPlayers(roomState.players || {})
       setHostId(roomState.hostId ?? null)
+      setArenaId(roomState.arena?.id ?? DEFAULT_ARENA_ID)
     })
 
     socket.on('gameState', () => {
@@ -44,11 +47,16 @@ export default function Lobby() {
       setError(msg || 'Only the host can start the game.')
     })
 
+    socket.on('selectArenaError', ({ error: msg }) => {
+      setError(msg || 'Only the host can change the arena.')
+    })
+
     return () => {
       socket.off('connect')
       socket.off('lobbyUpdate')
       socket.off('gameState')
       socket.off('startGameError')
+      socket.off('selectArenaError')
     }
   }, [navigate])
 
@@ -110,6 +118,12 @@ export default function Lobby() {
 
   const handleStartGame = () => {
     socket.emit('startGame')
+  }
+
+  const handleSelectArena = (id) => {
+    if (!isHost || id === arenaId) return
+    setError('')
+    socket.emit('selectArena', id)
   }
 
   const isHost = hostId !== null && socket.id === hostId
@@ -287,6 +301,46 @@ export default function Lobby() {
 
         {inRoom && (
           <div className="space-y-4">
+            <div>
+              <p className="text-sm mb-2" style={{ fontFamily: "'Kalam', cursive", color: '#6B6558', fontWeight: 700 }}>
+                arena {isHost ? '(tap to change)' : ''}
+              </p>
+              <div className="flex gap-2">
+                {ARENAS.map((arena) => {
+                  const selected = arena.id === arenaId
+                  return (
+                    <motion.button
+                      key={arena.id}
+                      type="button"
+                      onClick={() => handleSelectArena(arena.id)}
+                      whileHover={isHost ? { scale: 1.05, rotate: -1 } : {}}
+                      whileTap={isHost ? { scale: 0.94, y: 2 } : {}}
+                      className="flex-1 rounded-xl px-2 py-3 flex flex-col items-center gap-1"
+                      style={{
+                        background: selected ? arena.theme : '#FFF9EC',
+                        border: `2.5px solid ${INK}`,
+                        boxShadow: selected ? `3px 3px 0 ${INK}` : 'none',
+                        cursor: isHost ? 'pointer' : 'default',
+                        opacity: isHost || selected ? 1 : 0.7,
+                      }}
+                    >
+                      <span className="text-2xl leading-none">{arena.emoji}</span>
+                      <span
+                        className="text-xs text-center leading-tight"
+                        style={{
+                          fontFamily: "'Kalam', cursive",
+                          fontWeight: 700,
+                          color: selected ? '#fff' : INK,
+                        }}
+                      >
+                        {arena.name}
+                      </span>
+                    </motion.button>
+                  )
+                })}
+              </div>
+            </div>
+
             <div>
               <p className="text-sm mb-2" style={{ fontFamily: "'Kalam', cursive", color: '#6B6558', fontWeight: 700 }}>
                 players in room
