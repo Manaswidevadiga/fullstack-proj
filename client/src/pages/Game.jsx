@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence, useAnimation } from 'framer-motion'
 import { socket } from '../lib/socket'
 import { SKINS, getSkinById } from '../lib/skins'
-import { getArenaById } from '../lib/Arenas'
+import { getArenaById } from '../lib/arenas'
 import { INK, PAPER, CORAL, SUN, SKY, GRASS, BUBBLEGUM } from '../lib/theme'
 import { Star, Zigzag, SnakeDoodle, BG_BLOBS } from '../components/doodles'
 
