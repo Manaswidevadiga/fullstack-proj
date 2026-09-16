@@ -4,20 +4,20 @@ const DEFAULT_ARENA_ID = 'meadow';
 const HAZARD_BLINK_MS = 2500; // wall-clock hazard toggle period, shared by all clients/server
 
 const CENTER = { x: Math.floor(GRID_SIZE / 2), y: Math.floor(GRID_SIZE / 2) };
-const CANYON_RING_RADIUS = 5;
+const CANYON_RING_RADIUS = 6;
 
-// Generates the outline of a Manhattan-distance diamond around a center point.
-// radius=5 -> exactly 20 cells, safely clear of every spawn point (all near edges/corners).
+// Generates the outline of a Manhattan-distance diamond around a center point,
+// with the four vertex cells (N/S/E/W) left open as entrances. Without those
+// gaps the ring is a sealed loop and anything spawning inside is unreachable.
+// radius=6 -> 24 outline cells, minus 4 vertices = 20 rocks.
 function buildDiamondRing(center, radius) {
   const cells = [];
   for (let dx = -radius; dx <= radius; dx++) {
     const dy = radius - Math.abs(dx);
-    if (dy === 0) {
-      cells.push({ x: center.x + dx, y: center.y });
-    } else {
-      cells.push({ x: center.x + dx, y: center.y + dy });
-      cells.push({ x: center.x + dx, y: center.y - dy });
-    }
+    if (dy === 0) continue; // skip the E/W vertices — these are the side entrances
+    if (Math.abs(dx) === 0) continue; // skip the N/S vertices — top/bottom entrances
+    cells.push({ x: center.x + dx, y: center.y + dy });
+    cells.push({ x: center.x + dx, y: center.y - dy });
   }
   return cells;
 }
