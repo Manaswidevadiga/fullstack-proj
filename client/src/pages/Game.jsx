@@ -11,8 +11,11 @@ const GRID_SIZE = 40
 const CELL_SIZE = 15
 const CANVAS_SIZE = GRID_SIZE * CELL_SIZE
 
-// Must match the server's TICK_RATE_MS (server/src/game/constants.js) — used
-// only to time client-side position interpolation between state updates.
+// Fallback/starting assumption for the tick interval, matching the server's
+// TICK_RATE_MS (server/src/game/constants.js). Once real gameState events
+// start arriving, the client measures the actual gap between them (see
+// pushState) and interpolates against that instead — this constant is only
+// used before the first two ticks have landed.
 const SERVER_TICK_MS = 230
 
 const KEY_MAP = {
@@ -27,12 +30,44 @@ const POWERUP_META = {
   magnet: { emoji: '🧲', color: BUBBLEGUM },
 }
 
+// Per-arena board palette. `texture` picks which decoration is scattered
+// through the danger zone so the dead area reads as part of the biome
+// instead of flat black.
+const ARENA_VISUALS = {
+  meadow: {
+    bg: '#07150a',
+    grid: '#16301c',
+    dangerFill: 'rgba(255, 107, 74, 0.12)',
+    texture: 'grass',
+    textureColor: '#2F6B37',
+  },
+  rocky_canyon: {
+    bg: '#150d06',
+    grid: '#2E1D10',
+    dangerFill: 'rgba(255, 107, 74, 0.13)',
+    texture: 'rocks',
+    textureColor: '#6B573C',
+  },
+  frozen_lake: {
+    bg: '#04121c',
+    grid: '#0E2A3C',
+    dangerFill: 'rgba(255, 107, 74, 0.10)',
+    texture: 'frost',
+    textureColor: '#2E6E8E',
+  },
+}
+
+function getArenaVisuals(arenaId) {
+  return ARENA_VISUALS[arenaId] || ARENA_VISUALS.meadow
+}
+
 // Rock obstacles use a fixed stone color regardless of arena theme accent —
 // only Rocky Canyon has obstacles, so this never needs to vary.
 const ROCK_FILL = '#8B7355'
 
-// TEMPORARY: mock data generator for testing rendering without backend
-function generateMockGameState(tick) {
+// TEMPORARY: mock data generator for testing rendering without backend.
+// Add &arena=rocky_canyon (or frozen_lake) to preview those boards offline.
+function generateMockGameState(tick, arenaId = 'meadow') {
   const angle1 = (tick * 0.05) % (Math.PI * 2)
   const angle2 = (tick * 0.05 + Math.PI) % (Math.PI * 2)
   const center = GRID_SIZE / 2
@@ -47,6 +82,36 @@ function generateMockGameState(tick) {
       { x: headX - 2, y: headY },
     ]
   }
+
+  // Mirrors the server's arena shapes closely enough for visual testing.
+  const mockArenas = {
+    meadow: { obstacles: [], hazards: [] },
+    rocky_canyon: {
+      obstacles: (() => {
+        const cells = []
+        const r = 6
+        for (let dx = -r; dx <= r; dx++) {
+          const dy = r - Math.abs(dx)
+          if (dy === 0 || dx === 0) continue
+          cells.push({ x: 20 + dx, y: 20 + dy }, { x: 20 + dx, y: 20 - dy })
+        }
+        return cells
+      })(),
+      hazards: [],
+    },
+    frozen_lake: {
+      obstacles: [],
+      hazards: [
+        { x: 10, y: 10 }, { x: 11, y: 10 }, { x: 10, y: 11 }, { x: 11, y: 11 },
+        { x: 28, y: 10 }, { x: 29, y: 10 }, { x: 28, y: 11 }, { x: 29, y: 11 },
+        { x: 10, y: 28 }, { x: 11, y: 28 }, { x: 10, y: 29 },
+        { x: 28, y: 28 }, { x: 29, y: 28 }, { x: 28, y: 29 },
+      ].map((h) => ({ ...h, active: Math.floor(Date.now() / 2500) % 2 === 0 })),
+    },
+  }
+
+  const shape = mockArenas[arenaId] || mockArenas.meadow
+  const meta = getArenaById(arenaId)
 
   return {
     players: {
@@ -71,7 +136,7 @@ function generateMockGameState(tick) {
       { id: 2, type: 'speed', x: 30, y: 28 },
     ],
     dangerRing: Math.max(5, 20 - Math.floor(tick / 40)), // shrinks over time
-    arena: { id: 'meadow', name: 'Meadow', theme: 'green', obstacles: [], hazards: [] },
+    arena: { id: meta.id, name: meta.name, theme: meta.theme, ...shape },
   }
 }
 
@@ -125,6 +190,16 @@ function drawObstacleCell(ctx, gx, gy) {
   ctx.roundRect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2, 3)
   ctx.fill()
 
+  // A couple of darker facets so each rock reads as a chunk of stone
+  // rather than a flat tile.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.28)'
+  ctx.beginPath()
+  ctx.moveTo(x + 2, y + CELL_SIZE - 3)
+  ctx.lineTo(x + CELL_SIZE / 2, y + CELL_SIZE / 2)
+  ctx.lineTo(x + CELL_SIZE - 2, y + CELL_SIZE - 3)
+  ctx.closePath()
+  ctx.fill()
+
   drawRoughRect(ctx, x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2, seed, INK)
 }
 
@@ -146,6 +221,14 @@ function drawHazardCell(ctx, gx, gy, active) {
   ctx.fill()
   ctx.restore()
 
+  // Crack lines across the ice, seeded per cell so they stay put.
+  ctx.strokeStyle = active ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.22)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(x + 3, y + 3 + seededRandom(seed) * 4)
+  ctx.lineTo(x + CELL_SIZE - 3, y + CELL_SIZE - 4 - seededRandom(seed + 3) * 4)
+  ctx.stroke()
+
   drawRoughRect(
     ctx,
     x + 1,
@@ -155,6 +238,57 @@ function drawHazardCell(ctx, gx, gy, active) {
     seed,
     active ? '#ffffff' : 'rgba(255, 255, 255, 0.3)'
   )
+}
+
+// Scatters biome decoration through a single danger-zone cell.
+function drawTextureCell(ctx, gx, gy, kind, color) {
+  const seed = gx * 733 + gy * 91
+  const r = seededRandom(seed)
+  if (r > 0.55) return // leave gaps so it looks scattered, not tiled
+
+  const x = gx * CELL_SIZE
+  const y = gy * CELL_SIZE
+  const jx = x + 2 + seededRandom(seed + 1) * (CELL_SIZE - 6)
+  const jy = y + 2 + seededRandom(seed + 2) * (CELL_SIZE - 6)
+
+  ctx.save()
+  ctx.globalAlpha = 0.65
+
+  if (kind === 'rocks') {
+    ctx.fillStyle = color
+    const size = 2 + seededRandom(seed + 3) * 3
+    ctx.beginPath()
+    ctx.moveTo(jx, jy - size)
+    ctx.lineTo(jx + size, jy)
+    ctx.lineTo(jx, jy + size)
+    ctx.lineTo(jx - size, jy)
+    ctx.closePath()
+    ctx.fill()
+  } else if (kind === 'grass') {
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1.4
+    ctx.lineCap = 'round'
+    for (let b = -1; b <= 1; b++) {
+      ctx.beginPath()
+      ctx.moveTo(jx + b * 2, jy + 3)
+      ctx.quadraticCurveTo(jx + b * 2.5, jy, jx + b * 3.5, jy - 3)
+      ctx.stroke()
+    }
+  } else if (kind === 'frost') {
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1.2
+    ctx.lineCap = 'round'
+    const len = 2.5 + seededRandom(seed + 4) * 2.5
+    for (let a = 0; a < 3; a++) {
+      const ang = (Math.PI / 3) * a + seededRandom(seed + 5) * 0.6
+      ctx.beginPath()
+      ctx.moveTo(jx - Math.cos(ang) * len, jy - Math.sin(ang) * len)
+      ctx.lineTo(jx + Math.cos(ang) * len, jy + Math.sin(ang) * len)
+      ctx.stroke()
+    }
+  }
+
+  ctx.restore()
 }
 
 function lerp(a, b, t) {
@@ -185,24 +319,48 @@ export default function Game() {
   const [showWarning, setShowWarning] = useState(false)
 
   const shakeControls = useAnimation()
-  const stateRef = useRef({ prev: null, curr: null, lastUpdateTime: 0 })
+  // avgInterval: a running estimate of the real gap between gameState
+  // updates (smoothed, not a hard fixed constant). Interpolation uses this
+  // instead of assuming the server always ticks at exactly TICK_RATE_MS —
+  // on a host like Render's free tier, real gaps vary (cold starts, CPU
+  // throttling), and interpolating against a fixed constant makes the
+  // snake finish its glide early and freeze until the next tick arrives,
+  // which reads as stutter/lag.
+  const stateRef = useRef({ prev: null, curr: null, lastUpdateTime: 0, avgInterval: SERVER_TICK_MS })
   const rafRef = useRef(null)
+  // Cached static backdrop (background + grid + danger zone + obstacles).
+  // Only rebuilt when the arena or danger ring actually changes, instead of
+  // redrawing ~80 grid lines and every rock on all 60 frames per second.
+  const backdropRef = useRef({ key: null, canvas: null })
 
   const pushState = (state) => {
+    const now = performance.now()
+    const prevUpdateTime = stateRef.current.lastUpdateTime
+    if (prevUpdateTime) {
+      const delta = now - prevUpdateTime
+      // Clamp so one huge gap (tab backgrounded, cold start, a dropped
+      // frame) doesn't permanently skew the running average.
+      const clamped = Math.min(delta, SERVER_TICK_MS * 4)
+      stateRef.current.avgInterval = stateRef.current.avgInterval
+        ? stateRef.current.avgInterval * 0.8 + clamped * 0.2
+        : clamped
+    }
     stateRef.current.prev = stateRef.current.curr
     stateRef.current.curr = state
-    stateRef.current.lastUpdateTime = performance.now()
+    stateRef.current.lastUpdateTime = now
     setGameState(state)
   }
 
   useEffect(() => {
-    const useMock = new URLSearchParams(window.location.search).get('mock') === 'true'
+    const params = new URLSearchParams(window.location.search)
+    const useMock = params.get('mock') === 'true'
+    const mockArena = params.get('arena') || 'meadow'
 
     if (useMock) {
       let tick = 0
       const interval = setInterval(() => {
         tick++
-        pushState(generateMockGameState(tick))
+        pushState(generateMockGameState(tick, mockArena))
       }, 125)
       return () => clearInterval(interval)
     }
@@ -214,6 +372,7 @@ export default function Game() {
       stateRef.current.prev = null
       stateRef.current.curr = state
       stateRef.current.lastUpdateTime = performance.now()
+      stateRef.current.avgInterval = SERVER_TICK_MS
       setGameState(state)
       setWinner(undefined)
       setRematchStatus(null)
@@ -253,11 +412,11 @@ export default function Game() {
   useEffect(() => {
     function renderLoop() {
       const canvas = canvasRef.current
-      const { prev, curr, lastUpdateTime } = stateRef.current
+      const { prev, curr, lastUpdateTime, avgInterval } = stateRef.current
 
       if (canvas && curr) {
         const ctx = canvas.getContext('2d')
-        const t = Math.min(1, (performance.now() - lastUpdateTime) / SERVER_TICK_MS)
+        const t = Math.min(1, (performance.now() - lastUpdateTime) / (avgInterval || SERVER_TICK_MS))
         drawFrame(ctx, curr, prev, t)
       }
 
@@ -268,45 +427,79 @@ export default function Game() {
     return () => cancelAnimationFrame(rafRef.current)
   }, [])
 
-  function drawFrame(ctx, state, prevState, t) {
-    ctx.fillStyle = '#0a0a0a'
-    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
+  // Builds (and caches) everything on the board that doesn't move: the biome
+  // background, grid, textured danger zone and static rock obstacles.
+  function getBackdrop(state) {
+    const arenaId = state.arena?.id || 'meadow'
+    const dangerRing = typeof state.dangerRing === 'number' ? state.dangerRing : 0
+    const obstacleCount = state.arena?.obstacles?.length || 0
+    const key = `${arenaId}:${dangerRing}:${obstacleCount}`
 
-    ctx.strokeStyle = '#18181b'
-    ctx.lineWidth = 1
-    for (let i = 0; i <= GRID_SIZE; i++) {
-      ctx.beginPath()
-      ctx.moveTo(i * CELL_SIZE, 0)
-      ctx.lineTo(i * CELL_SIZE, CANVAS_SIZE)
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.moveTo(0, i * CELL_SIZE)
-      ctx.lineTo(CANVAS_SIZE, i * CELL_SIZE)
-      ctx.stroke()
+    if (backdropRef.current.key === key && backdropRef.current.canvas) {
+      return backdropRef.current.canvas
     }
 
-    if (typeof state.dangerRing === 'number') {
-      const inset = state.dangerRing * CELL_SIZE
-      const safeX = inset
-      const safeY = inset
+    const vis = getArenaVisuals(arenaId)
+    const off = document.createElement('canvas')
+    off.width = CANVAS_SIZE
+    off.height = CANVAS_SIZE
+    const octx = off.getContext('2d')
+
+    octx.fillStyle = vis.bg
+    octx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
+
+    octx.strokeStyle = vis.grid
+    octx.lineWidth = 1
+    for (let i = 0; i <= GRID_SIZE; i++) {
+      octx.beginPath()
+      octx.moveTo(i * CELL_SIZE, 0)
+      octx.lineTo(i * CELL_SIZE, CANVAS_SIZE)
+      octx.stroke()
+      octx.beginPath()
+      octx.moveTo(0, i * CELL_SIZE)
+      octx.lineTo(CANVAS_SIZE, i * CELL_SIZE)
+      octx.stroke()
+    }
+
+    if (dangerRing > 0) {
+      const inset = dangerRing * CELL_SIZE
       const safeSize = Math.max(CANVAS_SIZE - inset * 2, 0)
 
-      ctx.save()
-      ctx.beginPath()
-      ctx.rect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
-      ctx.rect(safeX, safeY, safeSize, safeSize)
-      ctx.fillStyle = 'rgba(255, 107, 74, 0.14)'
-      ctx.fill('evenodd')
-      ctx.restore()
+      octx.save()
+      octx.beginPath()
+      octx.rect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
+      octx.rect(inset, inset, safeSize, safeSize)
+      octx.fillStyle = vis.dangerFill
+      octx.fill('evenodd')
+      octx.restore()
 
-      drawRoughRect(ctx, safeX, safeY, safeSize, safeSize, state.dangerRing, CORAL)
+      // Biome decoration scattered through the dead zone only.
+      for (let gx = 0; gx < GRID_SIZE; gx++) {
+        for (let gy = 0; gy < GRID_SIZE; gy++) {
+          const outside =
+            gx < dangerRing ||
+            gy < dangerRing ||
+            gx >= GRID_SIZE - dangerRing ||
+            gy >= GRID_SIZE - dangerRing
+          if (outside) drawTextureCell(octx, gx, gy, vis.texture, vis.textureColor)
+        }
+      }
+
+      drawRoughRect(octx, inset, inset, safeSize, safeSize, dangerRing, CORAL)
     }
 
-    // Arena obstacles/hazards — drawn after the danger zone but before
-    // food/power-ups/snakes, so those always render on top.
     if (state.arena?.obstacles?.length) {
-      state.arena.obstacles.forEach((o) => drawObstacleCell(ctx, o.x, o.y))
+      state.arena.obstacles.forEach((o) => drawObstacleCell(octx, o.x, o.y))
     }
+
+    backdropRef.current = { key, canvas: off }
+    return off
+  }
+
+  function drawFrame(ctx, state, prevState, t) {
+    ctx.drawImage(getBackdrop(state), 0, 0)
+
+    // Hazards blink, so they're the one arena element drawn every frame.
     if (state.arena?.hazards?.length) {
       state.arena.hazards.forEach((h) => drawHazardCell(ctx, h.x, h.y, h.active))
     }
