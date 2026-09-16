@@ -5,7 +5,7 @@ import { socket } from '../lib/socket'
 import { useAuth } from '../context/AuthContext'
 import { INK, PAPER, CORAL, SUN, SKY, GRASS } from '../lib/theme'
 import { Star, Zigzag, WobblyRing, BG_BLOBS } from '../components/doodles'
-import { ARENAS, DEFAULT_ARENA_ID } from '../lib/Arenas'
+import { ARENAS, DEFAULT_ARENA_ID } from '../lib/arenas'
 
 const chipRotations = [-3, 2, -2, 3, -1, 1]
 
