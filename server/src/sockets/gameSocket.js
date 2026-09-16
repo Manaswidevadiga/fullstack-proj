@@ -73,8 +73,9 @@ module.exports = function (io) {
       if (!room.started) room.start();
     });
 
-    socket.on('selectArena', (arenaId) => {
+        socket.on('selectArena', (arenaId) => {
       const room = rooms[socket.data.roomCode];
+      console.log(`selectArena received: "${arenaId}" from ${socket.id}, room ${socket.data.roomCode}`);
       if (!room) return;
       if (!room.isHost(socket.id)) {
         socket.emit('selectArenaError', { error: 'Only the room host can change the arena' });
