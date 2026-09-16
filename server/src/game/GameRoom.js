@@ -10,7 +10,7 @@ const {
   MAGNET_RADIUS,
   DANGER_WARNING_LEAD_MS
 } = require('./constants');
-const { getArenaById, DEFAULT_ARENA_ID, HAZARD_BLINK_MS } = require('./Arenas');
+const { getArenaById, DEFAULT_ARENA_ID, HAZARD_BLINK_MS } = require('./arenas');
 const VALID_SKINS = ['classic', 'ocean', 'sunset', 'bubblegum', 'grape', 'gold'];
 const DEFAULT_SKIN = 'classic';
 
