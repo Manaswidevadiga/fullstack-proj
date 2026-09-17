@@ -18,6 +18,18 @@ const CANVAS_SIZE = GRID_SIZE * CELL_SIZE
 // used before the first two ticks have landed.
 const SERVER_TICK_MS = 230
 
+// How far past t=1 interpolation is allowed to drift when a tick is late,
+// instead of hard-freezing at the last known position. 1.4 = up to 40%
+// further along the same direction of travel. The moment a real tick
+// arrives, position snaps back to truth, so overshoot self-corrects.
+const EXTRAPOLATION_CAP = 1.4
+
+// Snake body wiggle — a small sideways wave per segment, phase-shifted by
+// index, purely visual (grid/collision logic is untouched).
+const WIGGLE_AMPLITUDE = CELL_SIZE * 0.15
+const WIGGLE_SPEED = 5.5
+const WIGGLE_PHASE_STEP = 0.85
+
 const KEY_MAP = {
   ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
   w: 'UP', s: 'DOWN', a: 'LEFT', d: 'RIGHT',
@@ -60,6 +72,46 @@ const ARENA_VISUALS = {
 function getArenaVisuals(arenaId) {
   return ARENA_VISUALS[arenaId] || ARENA_VISUALS.meadow
 }
+
+// Per-arena theming for the page AROUND the canvas — gradient background,
+// floating accent blobs, and floating themed emoji, so the whole screen
+// feels like the chosen biome instead of just the board itself.
+const ARENA_PAGE_THEME = {
+  meadow: {
+    bg: 'radial-gradient(circle at 15% 20%, #1c3a1f 0%, #050e07 55%, #030905 100%)',
+    blobColors: [GRASS, SUN, SKY, '#3f7d33'],
+    icons: ['🌿', '🍀', '🌼', '🐛', '🌾'],
+  },
+  rocky_canyon: {
+    bg: 'radial-gradient(circle at 15% 20%, #3a2413 0%, #140b04 55%, #0a0502 100%)',
+    blobColors: [CORAL, '#b45309', '#8B7355', SUN],
+    icons: ['🪨', '⛰️', '🧱', '🏜️', '🦂'],
+  },
+  frozen_lake: {
+    bg: 'radial-gradient(circle at 15% 20%, #123244 0%, #041019 55%, #020a10 100%)',
+    blobColors: [SKY, '#38bdf8', BUBBLEGUM, '#ffffff'],
+    icons: ['❄️', '🧊', '⛄', '🌨️', '🥶'],
+  },
+}
+
+function getPageTheme(arenaId) {
+  return ARENA_PAGE_THEME[arenaId] || ARENA_PAGE_THEME.meadow
+}
+
+const PAGE_BLOB_LAYOUT = [
+  { size: 260, top: '-8%', left: '-10%', rotate: 10 },
+  { size: 200, top: '68%', left: '88%', rotate: -16 },
+  { size: 150, top: '2%', left: '82%', rotate: 22 },
+  { size: 170, top: '75%', left: '2%', rotate: -8 },
+]
+
+const PAGE_ICON_LAYOUT = [
+  { top: '10%', left: '6%', size: 34, rotate: -8, duration: 6 },
+  { top: '85%', left: '10%', size: 30, rotate: 10, duration: 7 },
+  { top: '14%', left: '90%', size: 32, rotate: -12, duration: 5.5 },
+  { top: '82%', left: '92%', size: 28, rotate: 14, duration: 6.5 },
+  { top: '46%', left: '3%', size: 26, rotate: -6, duration: 8 },
+]
 
 // Rock obstacles use a fixed stone color regardless of arena theme accent —
 // only Rocky Canyon has obstacles, so this never needs to vary.
@@ -301,12 +353,25 @@ function lerp(a, b, t) {
 // moves. Falls back to a zero-distance "no movement" for segments that
 // didn't exist last tick (e.g. a segment added by growth or a multi-step
 // speed-boost move), which snap in place rather than glide from nowhere.
+// t may run slightly past 1 (see EXTRAPOLATION_CAP) — lerp naturally keeps
+// extrapolating in the same direction past the endpoint, which is exactly
+// the "keep drifting instead of freezing" behavior we want on a late tick.
 function getInterpolatedSnake(prevSnake, currSnake, t) {
   if (!prevSnake || prevSnake.length === 0) return currSnake
   return currSnake.map((seg, i) => {
     const from = prevSnake[i] || seg
     return { x: lerp(from.x, seg.x, t), y: lerp(from.y, seg.y, t) }
   })
+}
+
+// Small deterministic string hash — used to stagger each snake's blink
+// cycle so multiple players don't blink in sync.
+function hashStringToInt(str) {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) >>> 0
+  }
+  return hash
 }
 
 export default function Game() {
@@ -416,7 +481,8 @@ export default function Game() {
 
       if (canvas && curr) {
         const ctx = canvas.getContext('2d')
-        const t = Math.min(1, (performance.now() - lastUpdateTime) / (avgInterval || SERVER_TICK_MS))
+        const rawT = (performance.now() - lastUpdateTime) / (avgInterval || SERVER_TICK_MS)
+        const t = Math.min(EXTRAPOLATION_CAP, Math.max(0, rawT))
         drawFrame(ctx, curr, prev, t)
       }
 
@@ -533,6 +599,7 @@ export default function Game() {
       ctx.fillText(meta.emoji, cx, cy + 1)
     })
 
+    const now = Date.now()
     const playerEntries = Object.entries(state.players || {})
     playerEntries.forEach(([id, player]) => {
       if (!player.alive || !player.snake?.length) return
@@ -540,9 +607,24 @@ export default function Game() {
       const prevSnake = prevState?.players?.[id]?.snake
       const renderSnake = getInterpolatedSnake(prevSnake, player.snake, t)
 
-      renderSnake.forEach((seg, segIdx) => {
-        const x = seg.x * CELL_SIZE
-        const y = seg.y * CELL_SIZE
+      // Wiggle: offset each segment sideways along a traveling sine wave,
+      // using the local tangent (direction to its neighbors) as the
+      // perpendicular axis, so the wave reads as a proper slither rather
+      // than segments sliding independently.
+      const wiggled = renderSnake.map((seg, idx) => {
+        const prevPt = renderSnake[Math.max(0, idx - 1)]
+        const nextPt = renderSnake[Math.min(renderSnake.length - 1, idx + 1)]
+        const tangent = { x: nextPt.x - prevPt.x, y: nextPt.y - prevPt.y }
+        const tLen = Math.hypot(tangent.x, tangent.y) || 1
+        const perp = { x: -tangent.y / tLen, y: tangent.x / tLen }
+        const wave = Math.sin(now / 1000 * WIGGLE_SPEED - idx * WIGGLE_PHASE_STEP) * WIGGLE_AMPLITUDE
+        return {
+          x: seg.x * CELL_SIZE + perp.x * wave,
+          y: seg.y * CELL_SIZE + perp.y * wave,
+        }
+      })
+
+      wiggled.forEach((pos, segIdx) => {
         const isHead = segIdx === 0
         const color = isHead ? skinData.head : skinData.body
 
@@ -550,7 +632,7 @@ export default function Game() {
         ctx.shadowColor = color
         ctx.shadowBlur = isHead ? 8 : 3
         ctx.beginPath()
-        ctx.roundRect(x + 1, y + 1, CELL_SIZE - 2, CELL_SIZE - 2, isHead ? CELL_SIZE / 2 : 3)
+        ctx.roundRect(pos.x + 1, pos.y + 1, CELL_SIZE - 2, CELL_SIZE - 2, isHead ? CELL_SIZE / 2 : 3)
         ctx.fill()
         ctx.shadowBlur = 0
       })
@@ -560,9 +642,9 @@ export default function Game() {
       let facing = { x: head.x - neck.x, y: head.y - neck.y }
       if (facing.x === 0 && facing.y === 0) facing = { x: 1, y: 0 }
 
-      const renderHead = renderSnake[0]
-      const hx = renderHead.x * CELL_SIZE + CELL_SIZE / 2
-      const hy = renderHead.y * CELL_SIZE + CELL_SIZE / 2
+      const headPos = wiggled[0]
+      const hx = headPos.x + CELL_SIZE / 2
+      const hy = headPos.y + CELL_SIZE / 2
       const perp = { x: -facing.y, y: facing.x }
       const eyeSpacing = CELL_SIZE / 4
       const eyeForward = CELL_SIZE / 6
@@ -572,7 +654,23 @@ export default function Game() {
         y: hy + perp.y * eyeSpacing * side + facing.y * eyeForward,
       }))
 
+      // Each snake blinks on its own staggered cycle (hashed from its
+      // socket id) so multiple players don't blink in sync.
+      const blinkOffset = hashStringToInt(id) % 4000
+      const blinking = (now + blinkOffset) % 4000 < 140
+
       eyes.forEach((eye) => {
+        if (blinking) {
+          ctx.strokeStyle = '#111827'
+          ctx.lineWidth = 1.6
+          ctx.lineCap = 'round'
+          ctx.beginPath()
+          ctx.moveTo(eye.x - CELL_SIZE / 10, eye.y)
+          ctx.lineTo(eye.x + CELL_SIZE / 10, eye.y)
+          ctx.stroke()
+          return
+        }
+
         ctx.beginPath()
         ctx.arc(eye.x, eye.y, CELL_SIZE / 7, 0, Math.PI * 2)
         ctx.fillStyle = '#ffffff'
@@ -585,7 +683,7 @@ export default function Game() {
       })
 
       if (player.effects?.shield) {
-        const pulseT = Date.now() / 300
+        const pulseT = now / 300
         const pulse = 2 + Math.sin(pulseT) * 1.5
         ctx.beginPath()
         ctx.arc(hx, hy, CELL_SIZE / 1.6 + pulse, 0, Math.PI * 2)
@@ -714,10 +812,51 @@ export default function Game() {
 
   const players = Object.entries(gameState?.players || {})
   const arenaMeta = getArenaById(gameState?.arena?.id)
+  const pageTheme = getPageTheme(gameState?.arena?.id)
 
   return (
-    <div className="min-h-screen bg-black flex flex-col lg:flex-row items-center justify-center gap-6 p-4">
-      <motion.div className="relative" animate={shakeControls}>
+    <div
+      className="min-h-screen relative overflow-hidden flex flex-col lg:flex-row items-center justify-center gap-6 p-4"
+      style={{ background: pageTheme.bg }}
+    >
+      {PAGE_BLOB_LAYOUT.map((b, i) => (
+        <motion.div
+          key={i}
+          className="absolute pointer-events-none"
+          style={{
+            width: b.size,
+            height: b.size,
+            top: b.top,
+            left: b.left,
+            background: pageTheme.blobColors[i % pageTheme.blobColors.length],
+            opacity: 0.18,
+            borderRadius: '58% 42% 65% 35% / 45% 55% 45% 55%',
+            filter: 'blur(1px)',
+          }}
+          animate={{ rotate: [b.rotate, b.rotate + 10, b.rotate] }}
+          transition={{ duration: 10 + i * 2, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      ))}
+
+      {PAGE_ICON_LAYOUT.map((ic, i) => (
+        <motion.span
+          key={i}
+          className="absolute pointer-events-none select-none"
+          style={{
+            top: ic.top,
+            left: ic.left,
+            fontSize: ic.size,
+            transform: `rotate(${ic.rotate}deg)`,
+            opacity: 0.55,
+          }}
+          animate={{ y: [0, -10, 0] }}
+          transition={{ duration: ic.duration, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          {pageTheme.icons[i % pageTheme.icons.length]}
+        </motion.span>
+      ))}
+
+      <motion.div className="relative z-10" animate={shakeControls}>
         <canvas
           ref={canvasRef}
           width={CANVAS_SIZE}
@@ -765,7 +904,7 @@ export default function Game() {
       </motion.div>
 
       {/* Mobile touch controls */}
-      <div className="lg:hidden grid grid-cols-3 gap-2 w-40 mx-auto mt-4">
+      <div className="relative z-10 lg:hidden grid grid-cols-3 gap-2 w-40 mx-auto mt-4">
         <div />
         <button
           onTouchStart={() => socket.emit('changeDirection', 'UP')}
@@ -803,7 +942,10 @@ export default function Game() {
         <div />
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 w-full lg:w-56">
+      <div
+        className="relative z-10 bg-zinc-900/90 rounded-2xl p-4 w-full lg:w-56"
+        style={{ border: `1.5px solid ${arenaMeta.theme}` }}
+      >
         <h2 className="text-zinc-400 text-sm font-semibold mb-3 uppercase tracking-wide">
           Players
         </h2>
