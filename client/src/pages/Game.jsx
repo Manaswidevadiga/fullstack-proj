@@ -18,14 +18,10 @@ const CANVAS_SIZE = GRID_SIZE * CELL_SIZE
 // used before the first two ticks have landed.
 const SERVER_TICK_MS = 230
 
-// How far past t=1 interpolation is allowed to drift when a tick is late,
-// instead of hard-freezing at the last known position. 1.4 = up to 40%
-// further along the same direction of travel. The moment a real tick
-// arrives, position snaps back to truth, so overshoot self-corrects.
-const EXTRAPOLATION_CAP = 1.4
-
 // Snake body wiggle — a small sideways wave per segment, phase-shifted by
-// index, purely visual (grid/collision logic is untouched).
+// index, purely visual (grid/collision logic is untouched). Only applied to
+// body segments (index >= 1) — the head stays locked to its true position
+// so the eyes read as steady/aiming rather than twitchy.
 const WIGGLE_AMPLITUDE = CELL_SIZE * 0.15
 const WIGGLE_SPEED = 5.5
 const WIGGLE_PHASE_STEP = 0.85
@@ -353,9 +349,6 @@ function lerp(a, b, t) {
 // moves. Falls back to a zero-distance "no movement" for segments that
 // didn't exist last tick (e.g. a segment added by growth or a multi-step
 // speed-boost move), which snap in place rather than glide from nowhere.
-// t may run slightly past 1 (see EXTRAPOLATION_CAP) — lerp naturally keeps
-// extrapolating in the same direction past the endpoint, which is exactly
-// the "keep drifting instead of freezing" behavior we want on a late tick.
 function getInterpolatedSnake(prevSnake, currSnake, t) {
   if (!prevSnake || prevSnake.length === 0) return currSnake
   return currSnake.map((seg, i) => {
@@ -388,9 +381,8 @@ export default function Game() {
   // updates (smoothed, not a hard fixed constant). Interpolation uses this
   // instead of assuming the server always ticks at exactly TICK_RATE_MS —
   // on a host like Render's free tier, real gaps vary (cold starts, CPU
-  // throttling), and interpolating against a fixed constant makes the
-  // snake finish its glide early and freeze until the next tick arrives,
-  // which reads as stutter/lag.
+  // throttling), so pacing the glide off the measured average tracks
+  // reality better than a fixed constant would.
   const stateRef = useRef({ prev: null, curr: null, lastUpdateTime: 0, avgInterval: SERVER_TICK_MS })
   const rafRef = useRef(null)
   // Cached static backdrop (background + grid + danger zone + obstacles).
@@ -481,8 +473,14 @@ export default function Game() {
 
       if (canvas && curr) {
         const ctx = canvas.getContext('2d')
-        const rawT = (performance.now() - lastUpdateTime) / (avgInterval || SERVER_TICK_MS)
-        const t = Math.min(EXTRAPOLATION_CAP, Math.max(0, rawT))
+        // Hard-capped at 1 — no extrapolation past the true last-known
+        // position. An earlier version let this drift past 1 to avoid
+        // freezing on a late tick, but that caused a visible
+        // overshoot-then-correct wobble once the real tick landed. The
+        // per-segment wiggle below now covers "still feels alive" during
+        // a brief pause, without moving the snake anywhere it hasn't
+        // actually been.
+        const t = Math.min(1, Math.max(0, (performance.now() - lastUpdateTime) / (avgInterval || SERVER_TICK_MS)))
         drawFrame(ctx, curr, prev, t)
       }
 
@@ -607,11 +605,15 @@ export default function Game() {
       const prevSnake = prevState?.players?.[id]?.snake
       const renderSnake = getInterpolatedSnake(prevSnake, player.snake, t)
 
-      // Wiggle: offset each segment sideways along a traveling sine wave,
-      // using the local tangent (direction to its neighbors) as the
-      // perpendicular axis, so the wave reads as a proper slither rather
-      // than segments sliding independently.
+      // Wiggle: offset each BODY segment (not the head) sideways along a
+      // traveling sine wave, using the local tangent as the perpendicular
+      // axis, so the wave reads as a slither. Index 0 (head) is excluded —
+      // wiggling it made the head itself look twitchy/laggy rather than
+      // alive, since it's what the eyes are attached to.
       const wiggled = renderSnake.map((seg, idx) => {
+        if (idx === 0) {
+          return { x: seg.x * CELL_SIZE, y: seg.y * CELL_SIZE }
+        }
         const prevPt = renderSnake[Math.max(0, idx - 1)]
         const nextPt = renderSnake[Math.min(renderSnake.length - 1, idx + 1)]
         const tangent = { x: nextPt.x - prevPt.x, y: nextPt.y - prevPt.y }
