@@ -1,3 +1,4 @@
+const jwt = require('jsonwebtoken');
 const GameRoom = require('../game/GameRoom');
 const { DIRECTIONS, MAX_PLAYERS_PER_ROOM } = require('../game/constants');
 
@@ -14,13 +15,47 @@ function findOpenRoom() {
 }
 
 module.exports = function (io) {
+  // Verifies the JWT sent in the socket handshake (if any), once per
+  // connection — so unlocks/custom skins can be tied to a real account
+  // instead of trusting whatever username the client claims in its event
+  // payloads. Missing or invalid/expired tokens fall back to guest rather
+  // than rejecting the connection outright.
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token;
+    if (!token) {
+      socket.data.userId = null;
+      socket.data.verifiedUsername = null;
+      return next();
+    }
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      socket.data.userId = decoded.id;
+      socket.data.verifiedUsername = decoded.username;
+    } catch {
+      socket.data.userId = null;
+      socket.data.verifiedUsername = null;
+    }
+    next();
+  });
+
   io.on('connection', (socket) => {
     console.log('connected:', socket.id);
 
+    // The server-verified identity from the handshake always wins over
+    // whatever the client's event payload claims — this is what actually
+    // prevents someone from spoofing another account's username.
+    function resolveIdentity(payload) {
+      if (socket.data.userId) {
+        return { username: socket.data.verifiedUsername, isGuest: false, userId: socket.data.userId };
+      }
+      return { username: payload.username, isGuest: true, userId: null };
+    }
+
     socket.on('createRoom', ({ username, isGuest, skin }, callback) => {
+      const identity = resolveIdentity({ username, isGuest });
       const roomCode = generateRoomCode();
       rooms[roomCode] = new GameRoom(roomCode, io);
-      rooms[roomCode].addPlayer(socket.id, username, !!isGuest, skin);
+      rooms[roomCode].addPlayer(socket.id, identity.username, identity.isGuest, skin, identity.userId);
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
       callback({ roomCode });
@@ -35,7 +70,8 @@ module.exports = function (io) {
       if (Object.keys(room.players).length >= MAX_PLAYERS_PER_ROOM) {
         return callback({ error: 'Room is full' });
       }
-      room.addPlayer(socket.id, username, !!isGuest, skin);
+      const identity = resolveIdentity({ username, isGuest });
+      room.addPlayer(socket.id, identity.username, identity.isGuest, skin, identity.userId);
       console.log('Players in room after join:', Object.keys(room.players));
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
@@ -44,6 +80,7 @@ module.exports = function (io) {
     });
 
     socket.on('quickJoin', ({ username, isGuest, skin }, callback) => {
+      const identity = resolveIdentity({ username, isGuest });
       let room = findOpenRoom();
       let roomCode;
 
@@ -55,7 +92,7 @@ module.exports = function (io) {
         rooms[roomCode] = room;
       }
 
-      room.addPlayer(socket.id, username, !!isGuest, skin);
+      room.addPlayer(socket.id, identity.username, identity.isGuest, skin, identity.userId);
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
       callback({ roomCode });

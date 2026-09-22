@@ -13,8 +13,10 @@ app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 const leaderboardRoutes = require('./routes/leaderboard.routes');
+const skinsRoutes = require('./routes/skins.routes');
 app.use('/api/auth', authRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/skins', skinsRoutes);
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: process.env.CLIENT_URL } });
