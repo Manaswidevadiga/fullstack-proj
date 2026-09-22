@@ -10,7 +10,7 @@ const {
   MAGNET_RADIUS,
   DANGER_WARNING_LEAD_MS
 } = require('./constants');
-const { getArenaById, DEFAULT_ARENA_ID, HAZARD_BLINK_MS } = require('./arenas');
+const { getArenaById, DEFAULT_ARENA_ID, HAZARD_BLINK_MS } = require('./Arenas');
 const VALID_SKINS = ['classic', 'ocean', 'sunset', 'bubblegum', 'grape', 'gold'];
 const DEFAULT_SKIN = 'classic';
 
@@ -33,7 +33,7 @@ class GameRoom {
     this.arena = getArenaById(DEFAULT_ARENA_ID);
   }
 
-  addPlayer(socketId, username, isGuest = false, skin = DEFAULT_SKIN) {
+  addPlayer(socketId, username, isGuest = false, skin = DEFAULT_SKIN, userId = null) {
     if (Object.keys(this.players).length === 0) {
       this.hostId = socketId; // first player in an empty room becomes host
     }
@@ -41,6 +41,7 @@ class GameRoom {
     this.players[socketId] = {
       username,
       isGuest,
+      userId, // real account id when authenticated via socket handshake JWT, else null
       skin: VALID_SKINS.includes(skin) ? skin : DEFAULT_SKIN, // never trust client input directly
       snake: [{ x: spawn.x, y: spawn.y }],
       direction: spawn.direction,
@@ -349,6 +350,7 @@ class GameRoom {
       .filter((p) => !p.isGuest)
       .map((p) => ({
         username: p.username,
+        userId: p.userId,
         length: p.snake.length,
         alive: p.alive
       }));
@@ -360,20 +362,47 @@ class GameRoom {
 
     try {
       const matchResult = await pool.query(
-        'INSERT INTO matches (room_code, ended_at) VALUES ($1, NOW()) RETURNING id',
-        [this.roomCode]
+        'INSERT INTO matches (room_code, arena_id, ended_at) VALUES ($1, $2, NOW()) RETURNING id',
+        [this.roomCode, this.arena.id]
       );
       const matchId = matchResult.rows[0].id;
 
       for (const player of playerSnapshot) {
         await pool.query(
-          'INSERT INTO match_players (match_id, guest_name, final_length, placement) VALUES ($1, $2, $3, $4)',
-          [matchId, player.username, player.length, player.alive ? 1 : null]
+          'INSERT INTO match_players (match_id, guest_name, user_id, final_length, placement) VALUES ($1, $2, $3, $4, $5)',
+          [matchId, player.username, player.userId, player.length, player.alive ? 1 : null]
         );
       }
       console.log(`Match ${matchId} saved (${playerSnapshot.length} registered players).`);
+
+      // Costume-pack / custom-designer unlocks — only the winner earns
+      // anything, and only if they're a registered (non-guest) player.
+      if (winnerEntry && !winnerEntry.isGuest && winnerEntry.userId) {
+        await this.checkAndGrantUnlocks(winnerEntry.userId);
+      }
     } catch (err) {
       console.error('Failed to save match:', err);
+    }
+  }
+
+  async checkAndGrantUnlocks(userId) {
+    const earned = [];
+
+    if (this.arena.id === 'rocky_canyon') earned.push('canyon_pack');
+    if (this.arena.id === 'frozen_lake') earned.push('frost_pack');
+
+    const winCountResult = await pool.query(
+      'SELECT COUNT(*) FROM match_players WHERE user_id = $1 AND placement = 1',
+      [userId]
+    );
+    const totalWins = parseInt(winCountResult.rows[0].count, 10);
+    if (totalWins >= 5) earned.push('custom_designer');
+
+    for (const unlockId of earned) {
+      await pool.query(
+        'INSERT INTO user_unlocks (user_id, unlock_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+        [userId, unlockId]
+      );
     }
   }
 }
