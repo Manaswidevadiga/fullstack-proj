@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { DEFAULT_SKIN_ID } from '../lib/skins'
+import { socket } from '../lib/socket'
 
 const AuthContext = createContext(null)
 
@@ -39,11 +40,19 @@ export function AuthProvider({ children }) {
     localStorage.setItem('skin', skin)
   }, [skin])
 
+  // Forces the socket to re-authenticate on its next connect, so a switch
+  // between accounts (or to/from guest) in the same tab doesn't leave the
+  // server still treating this connection as the previous identity.
+  const resetSocketIdentity = () => {
+    if (socket.connected) socket.disconnect()
+  }
+
   const loginUser = (userData, jwt) => {
     localStorage.setItem('token', jwt)
     localStorage.setItem('user', JSON.stringify(userData))
     setUser(userData)
     setToken(jwt)
+    resetSocketIdentity()
   }
 
   const continueAsGuest = () => {
@@ -52,6 +61,7 @@ export function AuthProvider({ children }) {
     const guestUser = { username: generateGuestName(), isGuest: true }
     setUser(guestUser)
     setToken(null)
+    resetSocketIdentity()
     return guestUser
   }
 
@@ -60,6 +70,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('user')
     setUser(null)
     setToken(null)
+    resetSocketIdentity()
   }
 
   return (
