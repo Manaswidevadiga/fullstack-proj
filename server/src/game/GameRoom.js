@@ -10,8 +10,8 @@ const {
   MAGNET_RADIUS,
   DANGER_WARNING_LEAD_MS
 } = require('./constants');
-const { getArenaById, DEFAULT_ARENA_ID, HAZARD_BLINK_MS } = require('./Arenas');
-const VALID_SKINS = ['classic', 'ocean', 'sunset', 'bubblegum', 'grape', 'gold'];
+const { getArenaById, DEFAULT_ARENA_ID, HAZARD_BLINK_MS } = require('./arenas');
+const VALID_SKINS = ['classic', 'ocean', 'sunset', 'bubblegum', 'grape', 'gold', 'sandstone', 'obsidian', 'glacier', 'aurora'];
 const DEFAULT_SKIN = 'classic';
 
 class GameRoom {
@@ -33,16 +33,23 @@ class GameRoom {
     this.arena = getArenaById(DEFAULT_ARENA_ID);
   }
 
-  addPlayer(socketId, username, isGuest = false, skin = DEFAULT_SKIN, userId = null) {
+  addPlayer(socketId, username, isGuest = false, skin = DEFAULT_SKIN, userId = null, customColors = null) {
     if (Object.keys(this.players).length === 0) {
       this.hostId = socketId; // first player in an empty room becomes host
     }
     const spawn = this.getSpawnPoint(Object.keys(this.players).length);
+    // customColors is only trusted here because gameSocket.js's
+    // resolveValidatedSkin already fetched it from the DB for an
+    // authenticated, unlock-verified account — never accept it as-is from
+    // a raw client payload.
+    const isValidCustom = skin === 'custom' && customColors && customColors.body && customColors.head;
+    const isValidPreset = VALID_SKINS.includes(skin);
     this.players[socketId] = {
       username,
       isGuest,
       userId, // real account id when authenticated via socket handshake JWT, else null
-      skin: VALID_SKINS.includes(skin) ? skin : DEFAULT_SKIN, // never trust client input directly
+      skin: isValidPreset || isValidCustom ? skin : DEFAULT_SKIN,
+      customColors: isValidCustom ? customColors : null,
       snake: [{ x: spawn.x, y: spawn.y }],
       direction: spawn.direction,
       pendingDirection: spawn.direction,
@@ -319,6 +326,7 @@ class GameRoom {
             snake: p.snake,
             alive: p.alive,
             skin: p.skin,
+            customColors: p.customColors,
             effects: {
               speed: p.speedBoostUntil > now,
               shield: p.shielded,
