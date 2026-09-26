@@ -1,8 +1,20 @@
 const jwt = require('jsonwebtoken');
+const pool = require('../config/db');
 const GameRoom = require('../game/GameRoom');
 const { DIRECTIONS, MAX_PLAYERS_PER_ROOM } = require('../game/constants');
 
 const rooms = {};
+
+const BASE_SKINS = ['classic', 'ocean', 'sunset', 'bubblegum', 'grape', 'gold'];
+// Maps each pack skin id to the unlock_id that grants it — mirrors
+// client/src/lib/skins.js's PACK_SKINS, kept here since server and client
+// are separate codebases.
+const PACK_SKIN_UNLOCKS = {
+  sandstone: 'canyon_pack',
+  obsidian: 'canyon_pack',
+  glacier: 'frost_pack',
+  aurora: 'frost_pack',
+};
 
 function generateRoomCode() {
   return Math.random().toString(36).substring(2, 7).toUpperCase();
@@ -12,6 +24,51 @@ function findOpenRoom() {
   return Object.values(rooms).find(
     (room) => !room.started && Object.keys(room.players).length < MAX_PLAYERS_PER_ROOM
   );
+}
+
+// Validates a requested skin id against what this identity is actually
+// allowed to use, and — for 'custom' — fetches the real saved colors from
+// the DB rather than trusting anything the client sent. Never trust a
+// pack/custom skin claim from an unauthenticated or guest connection.
+async function resolveValidatedSkin(identity, requestedSkinId) {
+  if (identity.isGuest || !identity.userId) {
+    return {
+      skin: BASE_SKINS.includes(requestedSkinId) ? requestedSkinId : BASE_SKINS[0],
+      customColors: null,
+    };
+  }
+
+  if (requestedSkinId === 'custom') {
+    const result = await pool.query(
+      `SELECT u.custom_skin_body, u.custom_skin_head
+       FROM users u
+       JOIN user_unlocks ul ON ul.user_id = u.id AND ul.unlock_id = 'custom_designer'
+       WHERE u.id = $1`,
+      [identity.userId]
+    );
+    const row = result.rows[0];
+    if (row && row.custom_skin_body && row.custom_skin_head) {
+      return { skin: 'custom', customColors: { body: row.custom_skin_body, head: row.custom_skin_head } };
+    }
+    return { skin: BASE_SKINS[0], customColors: null };
+  }
+
+  const requiredUnlock = PACK_SKIN_UNLOCKS[requestedSkinId];
+  if (requiredUnlock) {
+    const result = await pool.query(
+      'SELECT 1 FROM user_unlocks WHERE user_id = $1 AND unlock_id = $2',
+      [identity.userId, requiredUnlock]
+    );
+    if (result.rows.length > 0) {
+      return { skin: requestedSkinId, customColors: null };
+    }
+    return { skin: BASE_SKINS[0], customColors: null };
+  }
+
+  if (BASE_SKINS.includes(requestedSkinId)) {
+    return { skin: requestedSkinId, customColors: null };
+  }
+  return { skin: BASE_SKINS[0], customColors: null };
 }
 
 module.exports = function (io) {
@@ -51,18 +108,19 @@ module.exports = function (io) {
       return { username: payload.username, isGuest: true, userId: null };
     }
 
-    socket.on('createRoom', ({ username, isGuest, skin }, callback) => {
+    socket.on('createRoom', async ({ username, isGuest, skin }, callback) => {
       const identity = resolveIdentity({ username, isGuest });
+      const { skin: validatedSkin, customColors } = await resolveValidatedSkin(identity, skin);
       const roomCode = generateRoomCode();
       rooms[roomCode] = new GameRoom(roomCode, io);
-      rooms[roomCode].addPlayer(socket.id, identity.username, identity.isGuest, skin, identity.userId);
+      rooms[roomCode].addPlayer(socket.id, identity.username, identity.isGuest, validatedSkin, identity.userId, customColors);
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
       callback({ roomCode });
       io.to(roomCode).emit('lobbyUpdate', rooms[roomCode].getState());
     });
 
-    socket.on('joinRoom', ({ roomCode, username, isGuest, skin }, callback) => {
+    socket.on('joinRoom', async ({ roomCode, username, isGuest, skin }, callback) => {
       console.log(`joinRoom attempt: roomCode="${roomCode}", username="${username}"`);
       const room = rooms[roomCode];
       if (!room) return callback({ error: 'Room not found' });
@@ -71,7 +129,8 @@ module.exports = function (io) {
         return callback({ error: 'Room is full' });
       }
       const identity = resolveIdentity({ username, isGuest });
-      room.addPlayer(socket.id, identity.username, identity.isGuest, skin, identity.userId);
+      const { skin: validatedSkin, customColors } = await resolveValidatedSkin(identity, skin);
+      room.addPlayer(socket.id, identity.username, identity.isGuest, validatedSkin, identity.userId, customColors);
       console.log('Players in room after join:', Object.keys(room.players));
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
@@ -79,8 +138,9 @@ module.exports = function (io) {
       io.to(roomCode).emit('lobbyUpdate', room.getState());
     });
 
-    socket.on('quickJoin', ({ username, isGuest, skin }, callback) => {
+    socket.on('quickJoin', async ({ username, isGuest, skin }, callback) => {
       const identity = resolveIdentity({ username, isGuest });
+      const { skin: validatedSkin, customColors } = await resolveValidatedSkin(identity, skin);
       let room = findOpenRoom();
       let roomCode;
 
@@ -92,7 +152,7 @@ module.exports = function (io) {
         rooms[roomCode] = room;
       }
 
-      room.addPlayer(socket.id, identity.username, identity.isGuest, skin, identity.userId);
+      room.addPlayer(socket.id, identity.username, identity.isGuest, validatedSkin, identity.userId, customColors);
       socket.join(roomCode);
       socket.data.roomCode = roomCode;
       callback({ roomCode });
