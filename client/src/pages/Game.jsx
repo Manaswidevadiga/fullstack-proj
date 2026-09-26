@@ -473,13 +473,6 @@ export default function Game() {
 
       if (canvas && curr) {
         const ctx = canvas.getContext('2d')
-        // Hard-capped at 1 — no extrapolation past the true last-known
-        // position. An earlier version let this drift past 1 to avoid
-        // freezing on a late tick, but that caused a visible
-        // overshoot-then-correct wobble once the real tick landed. The
-        // per-segment wiggle below now covers "still feels alive" during
-        // a brief pause, without moving the snake anywhere it hasn't
-        // actually been.
         const t = Math.min(1, Math.max(0, (performance.now() - lastUpdateTime) / (avgInterval || SERVER_TICK_MS)))
         drawFrame(ctx, curr, prev, t)
       }
@@ -601,7 +594,7 @@ export default function Game() {
     const playerEntries = Object.entries(state.players || {})
     playerEntries.forEach(([id, player]) => {
       if (!player.alive || !player.snake?.length) return
-      const skinData = getSkinById(player.skin)
+      const skinData = getSkinById(player.skin, player.customColors)
       const prevSnake = prevState?.players?.[id]?.snake
       const renderSnake = getInterpolatedSnake(prevSnake, player.snake, t)
 
@@ -960,7 +953,7 @@ export default function Game() {
             >
               <span
                 className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: getSkinById(p.skin).head }}
+                style={{ backgroundColor: getSkinById(p.skin, p.customColors).head }}
               />
               <span className="text-white">{p.username}</span>
               {p.effects?.speed && <span title="Speed Boost">⚡</span>}
